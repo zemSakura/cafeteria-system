@@ -1,6 +1,8 @@
-import model.Student;
-import module.ArrivalModule;
-import config.CanteenConfig;
+package backend;
+
+import backend.config.CanteenConfig;
+import backend.model.Student;
+import backend.module.ArrivalModule;
 
 import java.util.ArrayList;
 import java.util.List;
