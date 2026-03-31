@@ -1,4 +1,4 @@
-package model;
+package backend.model;
 
 /**
  * 仿真事件

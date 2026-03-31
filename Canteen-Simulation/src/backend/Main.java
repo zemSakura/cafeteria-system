@@ -1,8 +1,10 @@
-import config.CanteenConfig;
-import model.Student;
-import model.WindowState;
-import module.ArrivalModule;
+package backend;
 
+import backend.config.CanteenConfig;
+import backend.model.Student;
+import backend.model.WindowState;
+import backend.module.ArrivalModule;
+import java.util.Map;
 import java.util.List;
 import java.util.Map;
 

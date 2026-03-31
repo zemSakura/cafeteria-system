@@ -1,4 +1,4 @@
-package model;
+package backend.model;
 
 /**
  * 最终统计结果
