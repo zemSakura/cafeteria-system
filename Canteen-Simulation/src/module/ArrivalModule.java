@@ -1,84 +1,231 @@
 package module;
 
 import config.CanteenConfig;
+import model.EventType;
+import model.Group;
+import model.SimulationEvent;
 import model.Student;
+import model.Window;
+import model.WindowState;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ThreadLocalRandom;
 
 public class ArrivalModule implements Runnable {
+
+    /**
+     * 兼容旧版演示入口保留的字段
+     * 正式集成时不建议依赖 BlockingQueue
+     */
     private final BlockingQueue<Student> queue;
 
-    // 用于统计的数组，我们将2小时分成24个时间段（每5分钟一段）
-    private final int[] stats = new int[24];
-    private final int interval = CanteenConfig.OPEN_DURATION / 24;
+    /**
+     * 使用固定种子，保证实验可复现
+     */
+    private final Random random;
+
+    public ArrivalModule() {
+        this(null, CanteenConfig.RANDOM_SEED);
+    }
+
+    public ArrivalModule(long seed) {
+        this(null, seed);
+    }
 
     public ArrivalModule(BlockingQueue<Student> queue) {
-        this.queue = queue;
+        this(queue, CanteenConfig.RANDOM_SEED);
     }
 
-    @Override
-    public void run() {
+    public ArrivalModule(BlockingQueue<Student> queue, long seed) {
+        this.queue = queue;
+        this.random = new Random(seed);
+    }
+
+    /**
+     * 正式对接接口 1：初始化窗口静态配置
+     */
+    public List<Window> initWindows() {
+        List<Window> windows = new ArrayList<>();
+        for (int i = 0; i < CanteenConfig.getWindowCount(); i++) {
+            windows.add(new Window(
+                    i,
+                    CanteenConfig.WINDOW_DISTANCES[i],
+                    CanteenConfig.WINDOW_AVG_SERVE_TIME[i]
+            ));
+        }
+        return windows;
+    }
+
+    /**
+     * 正式对接接口 2：初始化窗口运行态
+     */
+    public List<WindowState> initWindowStates() {
+        List<Window> windows = initWindows();
+        List<WindowState> states = new ArrayList<>();
+        for (Window window : windows) {
+            states.add(new WindowState(window));
+        }
+        return states;
+    }
+
+    /**
+     * 正式对接接口 3：生成学生到达数据
+     * 这里只负责“谁在什么时间到达”
+     */
+    public List<Student> generateStudents() {
+        List<Student> students = new ArrayList<>();
+
         int studentIdCounter = 1;
         int groupIdCounter = 1;
-        int virtualTime = 0;
-
-        System.out.println("=== 仿真开始：观察下方星号(*)的增长趋势 ===");
+        long virtualTime = 0;
 
         while (virtualTime < CanteenConfig.OPEN_DURATION) {
-            // 1. 泊松分布的核心逻辑：根据当前时间计算到达率 (Lambda)
             double progress = (double) virtualTime / CanteenConfig.OPEN_DURATION;
-            // sin函数产生0.1到0.5的波动，峰值刚好在进度 0.5 (即中午12:00)
+
+            // 中间高、两边低：午餐高峰更明显
             double lambda = 0.05 + 0.45 * Math.sin(Math.PI * progress);
+            if (lambda <= 0) {
+                lambda = 0.01;
+            }
 
-            double u = ThreadLocalRandom.current().nextDouble();
-            int nextGap = (int) (-Math.log(1 - u) / lambda);
-            if (nextGap < 1) nextGap = 1;
-
+            int nextGap = sampleArrivalGap(lambda);
             virtualTime += nextGap;
 
-            // 2. 结伴逻辑
+            if (virtualTime > CanteenConfig.OPEN_DURATION) {
+                break;
+            }
+
             int groupSize = determineGroupSize();
 
-            // 3. 统计并生成学生
-            int statsIdx = virtualTime / interval;
-            if (statsIdx >= 24) statsIdx = 23;
-            stats[statsIdx] += groupSize; // 记录这个时间段来了多少人
-
             for (int i = 0; i < groupSize; i++) {
-                try {
-                    queue.put(new Student(studentIdCounter++, groupIdCounter, virtualTime));
-                } catch (InterruptedException e) {
-                    return;
-                }
+                int diningTime = generateDiningTime();
+                int preferredWindow = generatePreferredWindow();
+                int patience = generatePatience();
+
+                Student student = new Student(
+                        studentIdCounter++,
+                        groupIdCounter,
+                        virtualTime,
+                        diningTime,
+                        preferredWindow,
+                        patience
+                );
+
+                students.add(student);
             }
+
             groupIdCounter++;
-
-            // 4. 【实时可视化逻辑】
-            // 每当模拟时间过去 300 秒（5分钟），就打印当前的“人流密度图”
-            if (virtualTime % 300 < nextGap) {
-                printDensityMap(virtualTime);
-            }
-
-            // 加速仿真：0.02秒代表模拟中的 nextGap 秒
-            try { Thread.sleep(20); } catch (InterruptedException e) { break; }
         }
-        System.out.println("\n=== 模拟结束，上方即为食堂完整的人流波动图 ===");
+
+        return students;
     }
 
-    private void printDensityMap(int currentTime) {
-        int currentBin = currentTime / interval;
-        System.out.printf("[%04ds] 实时密度: ", currentTime);
+    /**
+     * 正式对接接口 4：按 groupId 整理学生
+     */
+    public Map<Integer, List<Student>> groupStudentsByGroupId(List<Student> students) {
+        Map<Integer, List<Student>> grouped = new LinkedHashMap<>();
+        for (Student student : students) {
+            grouped.computeIfAbsent(student.getGroupId(), k -> new ArrayList<>()).add(student);
+        }
+        return grouped;
+    }
 
-        // 打印星号，星号的数量代表当前时间段的人数
-        int count = stats[currentBin >= 24 ? 23 : currentBin];
-        String bar = "*".repeat(Math.min(count, 50)); // 最多显示50个星号防止刷屏
-        System.out.println(bar + " (" + count + "人)");
+    /**
+     * 可选对接接口：直接生成 Group 列表
+     */
+    public List<Group> generateGroups() {
+        List<Student> students = generateStudents();
+        Map<Integer, List<Student>> grouped = groupStudentsByGroupId(students);
+
+        List<Group> groups = new ArrayList<>();
+        for (Map.Entry<Integer, List<Student>> entry : grouped.entrySet()) {
+            List<Student> members = entry.getValue();
+            long arrivalTime = members.get(0).getArrivalTime();
+            groups.add(new Group(entry.getKey(), arrivalTime, members));
+        }
+        return groups;
+    }
+
+    /**
+     * 可选对接接口：直接生成到达事件
+     * 当前只生成 ARRIVAL 事件
+     */
+    public List<SimulationEvent> generateArrivalEvents() {
+        List<Student> students = generateStudents();
+        List<SimulationEvent> events = new ArrayList<>();
+
+        for (Student student : students) {
+            events.add(new SimulationEvent(
+                    student.getArrivalTime(),
+                    EventType.ARRIVAL,
+                    student.getGroupId(),
+                    student.getId(),
+                    -1,
+                    -1,
+                    0
+            ));
+        }
+
+        return events;
+    }
+
+    /**
+     * 保留 Runnable：兼容旧版测试写法
+     * 但这里不再 sleep、不再打印，只是把结果塞进队列
+     */
+    @Override
+    public void run() {
+        if (queue == null) {
+            return;
+        }
+
+        List<Student> students = generateStudents();
+        for (Student student : students) {
+            try {
+                queue.put(student);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+    }
+
+    private int sampleArrivalGap(double lambda) {
+        double u = random.nextDouble();
+        double gap = -Math.log(1 - u) / lambda;
+        return Math.max(1, (int) Math.ceil(gap));
     }
 
     private int determineGroupSize() {
-        double r = ThreadLocalRandom.current().nextDouble();
-        if (r < CanteenConfig.PROB_SOLO) return 1;
-        if (r < CanteenConfig.PROB_SOLO + CanteenConfig.PROB_DUO) return 2;
+        double r = random.nextDouble();
+        if (r < CanteenConfig.PROB_SOLO) {
+            return 1;
+        }
+        if (r < CanteenConfig.PROB_SOLO + CanteenConfig.PROB_DUO) {
+            return 2;
+        }
         return 4;
+    }
+
+    private int generateDiningTime() {
+        double gaussian = random.nextGaussian();
+        int result = (int) Math.round(
+                CanteenConfig.DINING_TIME_MEAN + gaussian * CanteenConfig.DINING_TIME_STD
+        );
+        return Math.max(result, CanteenConfig.MIN_DINING_TIME);
+    }
+
+    private int generatePreferredWindow() {
+        return random.nextInt(CanteenConfig.getWindowCount());
+    }
+
+    private int generatePatience() {
+        return CanteenConfig.PATIENCE_MIN
+                + random.nextInt(CanteenConfig.PATIENCE_MAX - CanteenConfig.PATIENCE_MIN + 1);
     }
 }

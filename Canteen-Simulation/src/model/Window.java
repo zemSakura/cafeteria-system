@@ -1,13 +1,13 @@
 package model;
 
 /**
- * 窗口模型
- * 由负责人员到来模块的同学（你）进行初始化
+ * 窗口静态配置模型
+ * 只负责描述窗口本身的固定属性
  */
 public class Window {
     private int id;                // 窗口编号
-    private int distanceFromDoor;  // 距离门口的距离（你要求的特殊属性）
-    private int avgServeTime;     // 窗口平均服务时间
+    private int distanceFromDoor;  // 距离门口距离（米）
+    private int avgServeTime;      // 平均服务时长（仿真时间单位）
 
     public Window(int id, int distanceFromDoor, int avgServeTime) {
         this.id = id;
@@ -15,14 +15,15 @@ public class Window {
         this.avgServeTime = avgServeTime;
     }
 
-    // Getter 方法
     public int getId() { return id; }
     public int getDistanceFromDoor() { return distanceFromDoor; }
     public int getAvgServeTime() { return avgServeTime; }
 
     @Override
     public String toString() {
-        return String.format("窗口[%d] | 距离门:%dm | 平均服务时间:%ds",
-                id, distanceFromDoor, avgServeTime);
+        return String.format(
+                "窗口[%d] | 距离门:%dm | 平均服务时长:%d",
+                id, distanceFromDoor, avgServeTime
+        );
     }
 }

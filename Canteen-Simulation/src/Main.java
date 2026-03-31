@@ -1,93 +1,101 @@
-import model.Student;
-import module.ArrivalModule;
 import config.CanteenConfig;
+import model.Student;
+import model.WindowState;
+import module.ArrivalModule;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.Map;
 
 public class Main {
-    public static void main(String[] args) throws InterruptedException {
-        // 1. 数据中转站
-        BlockingQueue<Student> arrivalQueue = new LinkedBlockingQueue<>(2000);
-        // 2. 数据记录本（用于最后统计图表）
-        List<Student> historyRecords = new ArrayList<>();
 
-        // 3. 启动产生模块
-        ArrivalModule arrivalModule = new ArrivalModule(arrivalQueue);
-        Thread arrivalThread = new Thread(arrivalModule);
+    public static void main(String[] args) {
+        // 1. 校验配置
+        CanteenConfig.validate();
 
-        System.out.println(">>> 仿真开始：正在模拟食堂开放过程...");
-        arrivalThread.start();
+        // 2. 初始化模块
+        ArrivalModule arrivalModule = new ArrivalModule();
 
-        // 4. 实时收集数据
-        // 这个循环模拟了后续模块接收学生的过程，并将其存入历史记录
-        while (arrivalThread.isAlive() || !arrivalQueue.isEmpty()) {
-            Student s = arrivalQueue.poll(); // 尝试拿一个学生
-            if (s != null) {
-                historyRecords.add(s);
-            } else {
-                Thread.sleep(10); // 没人的时候歇 10ms
-            }
+        // 3. 初始化窗口（静态 + 运行态）
+        List<WindowState> windowStates = arrivalModule.initWindowStates();
+
+        // 4. 生成到达学生数据
+        List<Student> students = arrivalModule.generateStudents();
+
+        // 5. 按组整理
+        Map<Integer, List<Student>> grouped = arrivalModule.groupStudentsByGroupId(students);
+
+        // 6. 测试输出
+        printBasicInfo(windowStates, students, grouped.size());
+        printTrafficFlowReport(students, grouped.size());
+    }
+
+    private static void printBasicInfo(List<WindowState> windowStates,
+                                       List<Student> students,
+                                       int totalGroups) {
+        System.out.println("=".repeat(70));
+        System.out.println("食堂仿真系统 - 人员到来模块测试入口");
+        System.out.println("=".repeat(70));
+        System.out.println("时间单位说明: " + CanteenConfig.TIME_UNIT_DESCRIPTION);
+        System.out.println("营业总时长: " + CanteenConfig.OPEN_DURATION);
+        System.out.println("快照间隔: " + CanteenConfig.SNAPSHOT_INTERVAL);
+        System.out.println("窗口数量: " + windowStates.size());
+        System.out.println("总到达人数: " + students.size());
+        System.out.println("总到达组数: " + totalGroups);
+        System.out.println();
+
+        System.out.println("【窗口初始化结果】");
+        for (WindowState state : windowStates) {
+            System.out.println("  " + state.getWindow());
         }
-
-        // 5. 打印最终的人流量变化报告
-        printTrafficFlowReport(historyRecords);
+        System.out.println();
     }
 
     /**
-     * 可视化函数：打印人流量随时间变化的直方图
+     * 打印到达流量分布
+     * 这里只是测试用途，正式系统的快照输出以后交给统一模块
      */
-    private static void printTrafficFlowReport(List<Student> students) {
-        System.out.println("\n\n" + "=".repeat(70));
-        System.out.println("              食堂模拟仿真 - 全流程人流量审计报告");
-        System.out.println("=".repeat(70));
+    private static void printTrafficFlowReport(List<Student> students, int totalGroups) {
+        System.out.println("【人员到达分布报告】");
 
         if (students.isEmpty()) {
-            System.out.println("错误：未收集到任何学生数据。");
+            System.out.println("未生成任何学生数据。");
             return;
         }
 
-        // 基础数据计算
         int totalPeople = students.size();
-        long totalGroups = students.stream().map(Student::getGroupId).distinct().count();
-        double avgGroup = (double) totalPeople / totalGroups;
+        double avgGroupSize = totalGroups == 0 ? 0.0 : (double) totalPeople / totalGroups;
 
-        System.out.println("【全局统计】");
-        System.out.printf("模拟总时长: %d 秒 | 进店总人数: %d 人 | 进店总组数: %d 组\n",
-                CanteenConfig.OPEN_DURATION, totalPeople, totalGroups);
-        System.out.printf("平均小组规模: %.2f 人/组\n", avgGroup);
+        System.out.printf("总人数: %d | 总组数: %d | 平均组规模: %.2f%n",
+                totalPeople, totalGroups, avgGroupSize);
 
-        System.out.println("\n【人流量实时变化分布图】(每 * 代表约 5 人)");
-        System.out.println("时间区间 (秒)      人数       直方图趋势");
-        System.out.println("-".repeat(70));
-
-        // 将 2 小时分成 20 个时间段
-        int buckets = 20;
-        int bucketSize = CanteenConfig.OPEN_DURATION / buckets;
-        int[] distribution = new int[buckets];
+        int bucketSize = CanteenConfig.SNAPSHOT_INTERVAL;
+        int bucketCount = (CanteenConfig.OPEN_DURATION + bucketSize - 1) / bucketSize;
+        int[] distribution = new int[bucketCount];
 
         for (Student s : students) {
             int index = (int) (s.getArrivalTime() / bucketSize);
-            if (index >= buckets) index = buckets - 1;
+            if (index >= bucketCount) {
+                index = bucketCount - 1;
+            }
             distribution[index]++;
         }
 
-        // 打印字符图表
-        for (int i = 0; i < buckets; i++) {
+        System.out.println();
+        System.out.println("时间区间(仿真单位)    人数    直方图");
+        System.out.println("-".repeat(70));
+
+        for (int i = 0; i < bucketCount; i++) {
             int start = i * bucketSize;
-            int end = (i + 1) * bucketSize;
+            int end = Math.min((i + 1) * bucketSize, CanteenConfig.OPEN_DURATION);
             int count = distribution[i];
 
-            // 计算星号数量
-            String bar = "*".repeat(count / 5);
-            System.out.printf("[%4d - %4d] : %-5d %s\n", start, end, count, bar);
+            String bar = count == 0 ? "" : "*".repeat(Math.max(1, count / 2));
+            System.out.printf("[%3d, %3d)        %-5d   %s%n", start, end, count, bar);
         }
 
         System.out.println("-".repeat(70));
-        System.out.println(">>> 观察提示：图表中间部分最长，代表 12:00 左右的高峰期。");
-        System.out.println(">>> 验证成功：人流符合泊松分布的正态波动规律。");
+        System.out.println("说明：当前只是“到达模块测试入口”，不是最终总仿真入口。");
+        System.out.println("后续排队、服务、入座、离开应由统一事件驱动引擎接管。");
         System.out.println("=".repeat(70));
     }
 }
