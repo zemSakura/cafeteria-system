@@ -3,6 +3,7 @@ package backend.module;
 import backend.config.CanteenConfig;
 import backend.model.*;
 
+import javax.swing.*;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
 
@@ -18,6 +19,9 @@ public class ArrivalModule implements Runnable {
      * 使用固定种子，保证实验可复现
      */
     private final Random random;
+
+    // 【新增】前端 UI 的传声筒
+    private JTextArea logArea;
 
     public ArrivalModule() {
         this(null, CanteenConfig.RANDOM_SEED);
@@ -36,8 +40,14 @@ public class ArrivalModule implements Runnable {
         this.random = new Random(seed);
     }
 
+    // 【新增】专供前端 MainDashboard 调用的终极构造函数
+    public ArrivalModule(BlockingQueue<Student> queue, JTextArea logArea) {
+        this(queue, CanteenConfig.RANDOM_SEED);
+        this.logArea = logArea;
+    }
+
     /**
-     * 正式对接接口 1：初始化窗口静态配置
+     * 正式对接接口：初始化窗口静态配置
      */
     public List<Window> initWindows() {
         List<Window> windows = new ArrayList<>();
@@ -170,19 +180,48 @@ public class ArrivalModule implements Runnable {
      * 但这里不再 sleep、不再打印，只是把结果塞进队列
      */
     @Override
+    /**
+     * 保留 Runnable：配合前端大屏联调的“剧本播放器”
+     */
     public void run() {
-        if (queue == null) {
-            return;
-        }
+        if (queue == null) return;
 
         List<Student> students = generateStudents();
+        safeLog(">>> [系统] 后端剧本生成完毕，共计 " + students.size() + " 名学生准备就餐。");
+
         for (Student student : students) {
-            try {
-                queue.put(student);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+            // 检查中断：前端点击了停止按钮
+            if (Thread.currentThread().isInterrupted()) {
+                safeLog(">>> [系统] 收到中断信号，停止播放学生抵达画面。");
                 return;
             }
+
+            try {
+                queue.put(student);
+
+                // 【调用传声筒】向前端打印日志，展示学生的虚拟到达时间
+                safeLog(String.format(">>> [抵达] 时间戳:%03d | 学生 %03d | 目标窗口:%d",
+                        student.getArrivalTime(), student.getId(), student.getPreferredWindow()));
+
+                // 模拟学生抵达的时间间隔，让前端肉眼能看清
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                safeLog(">>> [系统] 引擎被强制叫停。");
+                return;
+            }
+        }
+        safeLog(">>> [系统] 所有学生已抵达完毕，仿真结束。");
+    }
+
+    // 【新增】Swing 线程安全的日志打印方法
+    private void safeLog(String msg) {
+        if (logArea != null) {
+            javax.swing.SwingUtilities.invokeLater(() -> {
+                logArea.append(msg + "\n");
+                // 让滚动条永远保持在最底部
+                logArea.setCaretPosition(logArea.getDocument().getLength());
+            });
         }
     }
 

@@ -13,7 +13,7 @@ public class CanteenConfig {
     public static final String TIME_UNIT_DESCRIPTION = "1 个仿真时间单位 = 1 分钟";
 
     // 1. 食堂基础硬件
-    public static final int TOTAL_TABLES = 150;
+    public static int TOTAL_TABLES = 150;
 
     /**
      * 营业总时长：2 小时 = 120 个仿真时间单位
