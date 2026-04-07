@@ -5,23 +5,26 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="fe51aa56-e3bc-4398-aa77-2a97374539d4" name="更改" comment="这是我的测试">
-      <change afterPath="$PROJECT_DIR$/Canteen-Simulation/src/backend/config/SimulationConfigRequest.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Canteen-Simulation/src/backend/engine/CanteenSimulationEngine.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Canteen-Simulation/src/backend/修改说明.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Canteen-Simulation/src/backend/Main.java" beforeDir="false" afterPath="$PROJECT_DIR$/Canteen-Simulation/src/backend/Main.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Canteen-Simulation/src/backend/config/CanteenConfig.java" beforeDir="false" afterPath="$PROJECT_DIR$/Canteen-Simulation/src/backend/config/CanteenConfig.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Canteen-Simulation/src/backend/model/EventType.java" beforeDir="false" afterPath="$PROJECT_DIR$/Canteen-Simulation/src/backend/model/EventType.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Canteen-Simulation/src/backend/model/Group.java" beforeDir="false" afterPath="$PROJECT_DIR$/Canteen-Simulation/src/backend/model/Group.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Canteen-Simulation/src/backend/model/SimulationEvent.java" beforeDir="false" afterPath="$PROJECT_DIR$/Canteen-Simulation/src/backend/model/SimulationEvent.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Canteen-Simulation/src/backend/model/StateSnapshot.java" beforeDir="false" afterPath="$PROJECT_DIR$/Canteen-Simulation/src/backend/model/StateSnapshot.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Canteen-Simulation/src/backend/model/StatisticsResult.java" beforeDir="false" afterPath="$PROJECT_DIR$/Canteen-Simulation/src/backend/model/StatisticsResult.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Canteen-Simulation/src/backend/model/Student.java" beforeDir="false" afterPath="$PROJECT_DIR$/Canteen-Simulation/src/backend/model/Student.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Canteen-Simulation/src/backend/model/StudentStatus.java" beforeDir="false" afterPath="$PROJECT_DIR$/Canteen-Simulation/src/backend/model/StudentStatus.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Canteen-Simulation/src/backend/model/Table.java" beforeDir="false" afterPath="$PROJECT_DIR$/Canteen-Simulation/src/backend/model/Table.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Canteen-Simulation/src/backend/model/Window.java" beforeDir="false" afterPath="$PROJECT_DIR$/Canteen-Simulation/src/backend/model/Window.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Canteen-Simulation/src/backend/model/WindowState.java" beforeDir="false" afterPath="$PROJECT_DIR$/Canteen-Simulation/src/backend/model/WindowState.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Canteen-Simulation/src/backend/engine/CanteenSimulationEngine.java" beforeDir="false" afterPath="$PROJECT_DIR$/Canteen-Simulation/src/backend/engine/CanteenSimulationEngine.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Canteen-Simulation/src/backend/module/ArrivalModule.java" beforeDir="false" afterPath="$PROJECT_DIR$/Canteen-Simulation/src/backend/module/ArrivalModule.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Canteen-Simulation/src/frontend/MainDashboard.java" beforeDir="false" afterPath="$PROJECT_DIR$/Canteen-Simulation/src/frontend/MainDashboard.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/Main.class" beforeDir="false" afterPath="$PROJECT_DIR$/out/production/cafeteria-system/backend/Main.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/config/CanteenConfig.class" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/model/EventType.class" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/model/Group.class" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/model/SimulationEvent.class" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/model/StateSnapshot.class" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/model/StatisticsResult.class" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/model/Student$1.class" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/model/Student.class" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/model/StudentStatus.class" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/model/Table.class" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/model/Window.class" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/model/WindowState.class" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/module/ArrivalModule.class" beforeDir="false" afterPath="$PROJECT_DIR$/out/production/cafeteria-system/backend/module/ArrivalModule.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/frontend/MainDashboard.class" beforeDir="false" afterPath="$PROJECT_DIR$/out/production/cafeteria-system/frontend/MainDashboard.class" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -50,6 +53,10 @@
     &quot;accountId&quot;: &quot;afcc4d7d-7508-498d-8037-207743dfbb69&quot;
   }
 }</component>
+  <component name="McpProjectServerCommands">
+    <commands />
+    <urls />
+  </component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 5
 }</component>
@@ -69,15 +76,17 @@
     "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
     "RunOnceActivity.git.unshallow": "true",
     "SHARE_PROJECT_CONFIGURATION_FILES": "true",
-    "git-widget-placeholder": "main",
+    "git-widget-placeholder": "ui-init",
     "kotlin-language-version-configured": "true",
     "last_opened_file_path": "C:/Users/HS/IdeaProjects/CanteenSimulation/Canteen-Simulation",
+    "node.js.selected.package.tslint": "(autodetect)",
     "onboarding.tips.debug.path": "C:/Users/HS/IdeaProjects/CanteenSimulation/src/Main.java",
     "project.structure.last.edited": "项目",
     "project.structure.proportion": "0.0",
     "project.structure.side.proportion": "0.0",
     "settings.editor.selected.configurable": "org.jetbrains.plugins.github.ui.GithubSettingsConfigurable",
-    "应用程序.Main.executor": "Run"
+    "应用程序.Main.executor": "Run",
+    "应用程序.MainDashboard.executor": "Run"
   }
 }]]></component>
   <component name="RecentsManager">

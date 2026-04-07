@@ -9,6 +9,7 @@ public class MainDashboard {
 
     // 创建一个全局的 DiningAreaPanel 对象，用于后续的更新
     private static frontend.DiningAreaPanel myDiningPanel;
+    private static frontend.QueueAreaPanel myQueuePanel;
 
     // 声明线程变量，初始为 null
     private static Thread arrivalThread = null;
@@ -38,10 +39,12 @@ public class MainDashboard {
         centerPanel.add(myDiningPanel);
 
 
-        // 右边依然保留占位符，等我们以后做排队列表
-        centerPanel.add(new QueueAreaPanel(10));
-
         frame.add(centerPanel, BorderLayout.CENTER);
+
+        // 3. 东部：窗口排队监控区
+        myQueuePanel = new frontend.QueueAreaPanel(5); // 赋值给全局静态变量
+        myQueuePanel.setPreferredSize(new Dimension(250, 0)); // 限制一下宽度
+        frame.add(myQueuePanel, BorderLayout.EAST); // 挂在整个窗口的最右边
 
         // 3. 南部：日志区
         frame.add(createLogAreaPanel(), BorderLayout.SOUTH);
@@ -56,66 +59,69 @@ public class MainDashboard {
         panel.setBorder(BorderFactory.createTitledBorder("Initialization Config"));
 
         // 1. 先给组件“上户口”（声明实体变量，有了名字才能被调用）
-        JLabel tableLabel = new JLabel("Tables (桌子数):");
-        JTextField tablesInputField = new JTextField("20", 5);
         JButton startButton = new JButton("▶ 开始仿真");
         JButton stopButton = new JButton("■ 停止仿真");
 
         // 2. 将带有名字的组件装进面板
-        panel.add(tableLabel);
-        panel.add(tablesInputField);
         panel.add(startButton);
         panel.add(stopButton);
 
         // 3. 在这里注入灵魂！为 startButton 绑定点击事件
         startButton.addActionListener(e -> {
-            try {
-                // --- 第一部分：【立即执行】参数检查与预热日志 ---
-                String tableStr = tablesInputField.getText().trim();
-                int tableCount = Integer.parseInt(tableStr);
+            // 1. 拦截：弹出配置对话框
+            // 假设你的大屏主 JFrame 变量名是 frame（如果不是，请换成实际的 JFrame 引用，或者填 null）
+            SimulationConfigDialog configDialog = new SimulationConfigDialog(null);
+            configDialog.setVisible(true); // 代码会在这里“暂停”，等待用户操作弹窗
 
-                if (tableCount <= 0 || tableCount > 42) {
-                    JOptionPane.showMessageDialog(panel, "桌子数量需在1-42之间！", "输入错误", JOptionPane.ERROR_MESSAGE);
-                    return;
-                }
-
-                // 注入配置并更新画面
-                backend.config.CanteenConfig.TOTAL_TABLES = tableCount;
-                myDiningPanel.updateTableCount(tableCount);
-
-                // 冻结界面，防止加载过程中用户乱点
-                tablesInputField.setEnabled(false);
-                startButton.setEnabled(false);
-
-                // 打印前两行日志
-                logTextArea.append(">>> 系统初始化完成，总桌子数已设定为: " + tableCount + "\n");
-                logTextArea.append(">>> 正在点火，启动后端仿真引擎...\n");
-
-                // --- 第二部分：【延迟执行】通过 Timer 制造 1s 的“加载感” ---
-                // 参数：1000毫秒延迟，后面是延迟结束后的动作
-                javax.swing.Timer delayTimer = new javax.swing.Timer(1000, event -> {
-
-                    // 1. 打印最后一行点火成功的日志
-                    logTextArea.append(">>> 仿真引擎启动成功！学生正在抵达...\n");
-
-                    // 2. 真正启动后端线程
-                    java.util.concurrent.BlockingQueue<backend.model.Student> arrivalQueue =
-                            new java.util.concurrent.LinkedBlockingQueue<>(2000);
-
-                    backend.module.ArrivalModule arrivalModule = new backend.module.ArrivalModule(arrivalQueue, logTextArea);
-                    arrivalThread = new Thread(arrivalModule);
-                    arrivalThread.start();
-
-                    // 3. 激活停止按钮
-                    stopButton.setEnabled(true);
-                });
-
-                delayTimer.setRepeats(false); // 极其重要：只运行一次，不要循环执行
-                delayTimer.start(); // 启动倒计时
-
-            } catch (NumberFormatException ex) {
-                JOptionPane.showMessageDialog(panel, "请输入有效的数字！", "格式错误", JOptionPane.ERROR_MESSAGE);
+            // 2. 判断用户操作：如果用户点了“取消”或者直接关了弹窗，就什么都不做
+            if (!configDialog.isConfirmed()) {
+                return;
             }
+
+            // 3. 拿到用户确认后的数据包！
+            frontend.SimulationConfigDTO dto = configDialog.getConfigData();
+
+            // 4. 【过渡期操作】：在后端组员改造完之前，我们先手动把这些值硬塞给后端的静态变量
+            config.CanteenConfig.TOTAL_TABLES = dto.totalTables;
+            config.CanteenConfig.OPEN_DURATION = dto.openDuration;
+
+            int wCount = dto.windowCount;
+            config.CanteenConfig.WINDOW_DISTANCES = new int[wCount];
+            config.CanteenConfig.WINDOW_AVG_SERVE_TIME = new int[wCount];
+
+            for (int i = 0; i < wCount; i++) {
+                config.CanteenConfig.WINDOW_DISTANCES[i] = 10 + (i * 5);
+                config.CanteenConfig.WINDOW_AVG_SERVE_TIME[i] = 2;
+            }
+
+            // 5. 更新物理画面
+            myDiningPanel.updateTableCount(dto.totalTables);
+            myQueuePanel.updateWindowCount(dto.windowCount);
+
+            // 6. 冻结界面按钮
+            startButton.setEnabled(false);
+            // ... 如果你那个 tablesInputField 还在界面上，也可以 setEnabled(false)
+
+            // 7. 打印预热日志
+            logTextArea.append(">>> 初始化配置注入成功！桌数: " + dto.totalTables + " | 窗口: " + dto.windowCount + "\n");
+            logTextArea.append(">>> 正在点火，启动后端仿真引擎...\n");
+
+            // 8. 触发 Timer 延迟启动（复用你昨天的完美逻辑）
+            delayTimer = new javax.swing.Timer(1000, event -> {
+                logTextArea.append(">>> 仿真引擎启动成功！学生正在抵达...\n");
+
+                java.util.concurrent.BlockingQueue<model.Student> arrivalQueue =
+                        new java.util.concurrent.LinkedBlockingQueue<>(2000);
+
+                backend.module.ArrivalModule arrivalModule = new backend.module.ArrivalModule(arrivalQueue, logTextArea);
+                arrivalThread = new Thread(arrivalModule);
+                arrivalThread.start();
+
+                stopButton.setEnabled(true);
+            });
+
+            delayTimer.setRepeats(false);
+            delayTimer.start();
         });
 
         // 停止按钮
@@ -133,7 +139,6 @@ public class MainDashboard {
             }
 
             // 3. 恢复 UI 状态
-            tablesInputField.setEnabled(true);
             startButton.setEnabled(true);
             stopButton.setEnabled(false);
 

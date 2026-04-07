@@ -21,7 +21,7 @@ public class CanteenConfig {
     }
 
     /**
-     * 时间单位说明：
+     * 时间单位说明：CanteenConfig
      * 当前统一约定：1 个仿真时间单位 = 1 分钟
      * 注意：这里只是“仿真单位”，不是系统真实秒
      */
@@ -44,7 +44,7 @@ public class CanteenConfig {
     public static final long DEFAULT_RANDOM_SEED = 20260324L;
 
     /** 默认窗口距离数组 */
-    public static final int[] DEFAULT_WINDOW_DISTANCES = {10, 15, 20, 25, 30};
+    public static int[] DEFAULT_WINDOW_DISTANCES = {10, 15, 20, 25, 30};
 
     /** 默认窗口平均服务时长数组 */
     public static final int[] DEFAULT_WINDOW_AVG_SERVE_TIME = {1, 2, 1, 2, 2};

@@ -9,43 +9,74 @@ public class QueueAreaPanel extends JPanel {
     // 用一个数组把所有窗口的进度条保存下来，方便以后后端传数据时修改它
     private JProgressBar[] queueBars;
 
-    public QueueAreaPanel(int windowCount) {
+    public QueueAreaPanel(int initialWindowCount) {
         this.setLayout(new BorderLayout());
         this.setBorder(BorderFactory.createTitledBorder("Window Queues Monitor (窗口排队监控)"));
 
-        // 中间用一个网格布局，专门放各行窗口
-        // 行数就是窗口数，列数是1
-        JPanel listPanel = new JPanel(new GridLayout(windowCount, 1, 0, 15));
-        listPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        // 构造时直接调用刷新方法
+        updateWindowCount(initialWindowCount);
+    }
+
+    // =========================================
+    // 【新增核心接口】：响应配置弹窗，擦除重画所有窗口
+    // =========================================
+    public void updateWindowCount(int windowCount) {
+        this.removeAll();
 
         queueBars = new JProgressBar[windowCount];
 
+        // 1. 核心列表面板（负责把所有窗口排成一列）
+        JPanel listPanel = new JPanel(new GridLayout(windowCount, 1, 0, 15));
+        listPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
         for (int i = 0; i < windowCount; i++) {
             JPanel singleWindowPanel = new JPanel(new BorderLayout(10, 0));
+            // 锁定单个窗口的完美高度（比如 35 像素），防止被拉伸变形
+            singleWindowPanel.setPreferredSize(new Dimension(0, 35));
 
-            // 左边：窗口名字
             JLabel nameLabel = new JLabel("窗口 " + (i + 1));
             nameLabel.setPreferredSize(new Dimension(60, 30));
             singleWindowPanel.add(nameLabel, BorderLayout.WEST);
 
-            // 中间：进度条 (代表排队人数)
-            JProgressBar progressBar = new JProgressBar(0, 30); // 假设最多排30人
-            progressBar.setValue(0); // 初始0人
-            progressBar.setStringPainted(true); // 允许在进度条上显示文字
+            JProgressBar progressBar = new JProgressBar(0, 30);
+            progressBar.setValue(0);
+            progressBar.setStringPainted(true);
             progressBar.setString("排队中: 0 人");
-            progressBar.setForeground(new Color(52, 199, 89)); // 默认绿色
+            progressBar.setForeground(new Color(52, 199, 89));
 
-            queueBars[i] = progressBar; // 存入数组，以后备用
+            queueBars[i] = progressBar;
             singleWindowPanel.add(progressBar, BorderLayout.CENTER);
 
             listPanel.add(singleWindowPanel);
         }
 
-        this.add(listPanel, BorderLayout.CENTER);
+        // =========================================
+        // 【防变形魔法】：用一个空的 BorderLayout 把列表顶在最上方 (NORTH)
+        // 这样即使只有 2 个窗口，它们也不会被撑满全屏
+        // =========================================
+        JPanel wrapperPanel = new JPanel(new BorderLayout());
+        wrapperPanel.add(listPanel, BorderLayout.NORTH);
+
+        // =========================================
+        // 【滚动条魔法】：给包装好的面板套上滚动视口
+        // =========================================
+        JScrollPane scrollPane = new JScrollPane(wrapperPanel);
+        // 只在需要时显示垂直滚动条
+        scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        // 永远不显示难看的水平滚动条
+        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        // 去掉默认的边框，让它和原来的 UI 完美融合
+        scrollPane.setBorder(null);
+
+        // 2. 把带有滚动条的画框加进主面板
+        this.add(scrollPane, BorderLayout.CENTER);
+
+        this.revalidate();
+        this.repaint();
     }
 
     // =========================================
-    // 【核心接口】：未来给后端调用的方法
+    // 【老核心接口】：未来给后端调用的方法，更新进度条数值
     // =========================================
     public void updateQueueLength(int windowIndex, int currentLength) {
         if (windowIndex >= 0 && windowIndex < queueBars.length) {
