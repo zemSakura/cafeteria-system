@@ -1,0 +1,108 @@
+Index: .idea/.gitignore
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/.gitignore b/.idea/.gitignore
+new file mode 100644
+--- /dev/null	(date 1773729726097)
++++ b/.idea/.gitignore	(date 1773729726097)
+@@ -0,0 +1,10 @@
++# 默认忽略的文件
++/shelf/
++/workspace.xml
++# 已忽略包含查询文件的默认文件夹
++/queries/
++# Datasource local storage ignored files
++/dataSources/
++/dataSources.local.xml
++# 基于编辑器的 HTTP 客户端请求
++/httpRequests/
+Index: .idea/vcs.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/vcs.xml b/.idea/vcs.xml
+new file mode 100644
+--- /dev/null	(date 1774943186882)
++++ b/.idea/vcs.xml	(date 1774943186882)
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<project version="4">
++  <component name="VcsDirectoryMappings">
++    <mapping directory="$PROJECT_DIR$" vcs="Git" />
++  </component>
++</project>
+\ No newline at end of file
+Index: .idea/misc.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/misc.xml b/.idea/misc.xml
+new file mode 100644
+--- /dev/null	(date 1773729724075)
++++ b/.idea/misc.xml	(date 1773729724075)
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<project version="4">
++  <component name="ProjectRootManager" version="2" default="true" project-jdk-name="25" project-jdk-type="JavaSDK">
++    <output url="file://$PROJECT_DIR$/out" />
++  </component>
++</project>
+\ No newline at end of file
+Index: 测试仓库链接
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>yuboyang
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/测试仓库链接 b/测试仓库链接
+--- a/测试仓库链接	(revision eed97ec07ada57bc3edc7f800b71c69dd0207fdd)
++++ b/测试仓库链接	(date 1775542271344)
+@@ -1,1 +1,0 @@
+-yuboyang
+\ No newline at end of file
+Index: CanteenSimulation.iml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/CanteenSimulation.iml b/CanteenSimulation.iml
+new file mode 100644
+--- /dev/null	(date 1773729724065)
++++ b/CanteenSimulation.iml	(date 1773729724065)
+@@ -0,0 +1,11 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<module type="JAVA_MODULE" version="4">
++  <component name="NewModuleRootManager" inherit-compiler-output="true">
++    <exclude-output />
++    <content url="file://$MODULE_DIR$">
++      <sourceFolder url="file://$MODULE_DIR$/src" isTestSource="false" />
++    </content>
++    <orderEntry type="inheritedJdk" />
++    <orderEntry type="sourceFolder" forTests="false" />
++  </component>
++</module>
+\ No newline at end of file
+Index: .idea/modules.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/modules.xml b/.idea/modules.xml
+new file mode 100644
+--- /dev/null	(date 1773729724069)
++++ b/.idea/modules.xml	(date 1773729724069)
+@@ -0,0 +1,8 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<project version="4">
++  <component name="ProjectModuleManager">
++    <modules>
++      <module fileurl="file://$PROJECT_DIR$/CanteenSimulation.iml" filepath="$PROJECT_DIR$/CanteenSimulation.iml" />
++    </modules>
++  </component>
++</project>
+\ No newline at end of file
