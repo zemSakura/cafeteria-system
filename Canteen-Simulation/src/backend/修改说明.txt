@@ -1,0 +1,261 @@
+食堂仿真系统前端调用指南
+
+一、前端现在应该调用谁
+前端不要直接调用 ArrivalModule，也不要直接修改 CanteenConfig 里的静态变量。
+前端统一调用总引擎类：
+
+engine.CanteenSimulationEngine
+
+原因：
+
+配置统一从这里进入
+启动从这里进入
+停止从这里进入
+重置从这里进入
+
+也就是说，前端以后只需要面向引擎编程，不要直接操作底层模块。
+
+==================================================
+二、前端需要 import 的类
+
+import config.SimulationConfigRequest;
+import engine.CanteenSimulationEngine;
+import model.Student;
+import model.Table;
+import model.WindowState;
+
+如果前端暂时只做“参数输入 + 点击开始 + 展示初始化结果”，最少只需要前两个类。
+
+==================================================
+三、前端标准调用流程
+
+前端点击“开始”按钮时，按照下面顺序调用：
+
+第 1 步：创建配置对象
+
+SimulationConfigRequest request = new SimulationConfigRequest();
+
+第 2 步：把前端表单里的值塞进 request
+
+request.setTableCount(tableCount);
+request.setWindowCount(windowCount);
+request.setOpenDuration(openDuration);
+request.setSnapshotInterval(snapshotInterval);
+request.setRandomSeed(randomSeed);
+
+request.setDiningTimeMean(diningTimeMean);
+request.setDiningTimeStd(diningTimeStd);
+request.setMinDiningTime(minDiningTime);
+
+request.setPatienceMin(patienceMin);
+request.setPatienceMax(patienceMax);
+
+request.setProbSolo(probSolo);
+request.setProbDuo(probDuo);
+request.setProbTeam(probTeam);
+
+如果前端只想控制窗口数量，不想控制每个窗口的具体参数，只传 windowCount 就可以。
+后端会自动根据 windowCount 动态生成窗口数组。
+
+如果前端以后想精细控制每个窗口，也可以额外传：
+
+request.setWindowDistances(distances);
+request.setWindowAvgServeTime(serveTimes);
+
+第 3 步：把配置交给引擎
+
+engine.applyConfig(request);
+
+第 4 步：启动前先 reset，再 start
+
+engine.resetEngine();
+engine.startEngine();
+
+第 5 步：从引擎取数据回来显示
+
+List<WindowState> windowStates = engine.getWindowStates();
+List<Student> students = engine.getStudents();
+List<Table> tables = engine.getTables();
+
+==================================================
+四、最推荐前端直接照抄的示例代码
+
+import config.SimulationConfigRequest;
+import engine.CanteenSimulationEngine;
+import model.Student;
+import model.Table;
+import model.WindowState;
+
+import java.util.List;
+
+public class FrontendCallDemo {
+
+// 建议做成页面级或控制器级成员变量，不要每次按钮点击都 new 一个
+private final CanteenSimulationEngine engine = new CanteenSimulationEngine();
+
+/**
+ * 开始按钮对应的方法
+ */
+public void onStartButtonClick() {
+    // 1. 读取前端输入框的值
+    // 这里先写死做示例，实际项目里改成读取文本框/下拉框即可
+    int tableCount = 180;
+    int windowCount = 8;
+    int openDuration = 120;
+    int snapshotInterval = 5;
+    long randomSeed = 20260401L;
+
+    double diningTimeMean = 15.0;
+    double diningTimeStd = 3.0;
+    int minDiningTime = 5;
+
+    int patienceMin = 5;
+    int patienceMax = 15;
+
+    double probSolo = 0.7;
+    double probDuo = 0.2;
+    double probTeam = 0.1;
+
+    // 2. 封装成统一配置对象
+    SimulationConfigRequest request = new SimulationConfigRequest();
+    request.setTableCount(tableCount);
+    request.setWindowCount(windowCount);
+    request.setOpenDuration(openDuration);
+    request.setSnapshotInterval(snapshotInterval);
+    request.setRandomSeed(randomSeed);
+
+    request.setDiningTimeMean(diningTimeMean);
+    request.setDiningTimeStd(diningTimeStd);
+    request.setMinDiningTime(minDiningTime);
+
+    request.setPatienceMin(patienceMin);
+    request.setPatienceMax(patienceMax);
+
+    request.setProbSolo(probSolo);
+    request.setProbDuo(probDuo);
+    request.setProbTeam(probTeam);
+
+    // 3. 应用配置
+    engine.applyConfig(request);
+
+    // 4. 每次开始前先 reset，再 start
+    engine.resetEngine();
+    engine.startEngine();
+
+    // 5. 读取结果，给前端界面显示
+    List<WindowState> windowStates = engine.getWindowStates();
+    List<Student> students = engine.getStudents();
+    List<Table> tables = engine.getTables();
+
+    System.out.println("启动成功");
+    System.out.println("窗口数: " + windowStates.size());
+    System.out.println("学生数: " + students.size());
+    System.out.println("桌位数: " + tables.size());
+}
+
+/**
+ * 停止按钮对应的方法
+ */
+public void onStopButtonClick() {
+    engine.stopEngine();
+    System.out.println("仿真已停止");
+}
+
+/**
+ * 重置按钮对应的方法
+ */
+public void onResetButtonClick() {
+    engine.resetEngine();
+    System.out.println("引擎已重置");
+}
+
+}
+
+==================================================
+五、前端按钮和后端方法的对应关系
+开始按钮
+
+调用顺序：
+
+engine.applyConfig(request);
+engine.resetEngine();
+engine.startEngine();
+
+停止按钮
+
+engine.stopEngine();
+
+重置按钮
+
+engine.resetEngine();
+
+==================================================
+六、前端最需要注意的几点
+不要直接改 CanteenConfig 的静态字段
+
+不要这样写：
+
+CanteenConfig.TOTAL_TABLES = 200;
+
+正确做法是把参数统一塞进 SimulationConfigRequest，然后调用：
+
+engine.applyConfig(request);
+
+不要直接 new ArrivalModule
+ArrivalModule 是底层模块，不是给前端直接调的。
+前端统一调 CanteenSimulationEngine。
+每次点击开始前，最好都先 resetEngine()
+即使已经 stopEngine() 了，也建议重新开始前再 reset 一次，防止旧运行态残留。
+三个概率之和必须等于 1
+也就是：
+
+probSolo + probDuo + probTeam = 1
+
+否则后端会报参数异常。
+
+windowCount 必须大于 0
+如果窗口数量传 0 或负数，后端会直接报错。
+如果前端自己传了窗口数组，那么两个数组长度必须一致
+也就是：
+
+windowDistances.length == windowAvgServeTime.length
+
+否则后端会报窗口配置非法。
+
+==================================================
+七、如果前端只想先跑通，最少需要传哪些参数
+
+如果前端暂时不想把所有参数都做成输入框，只想先跑起来，最少可以传：
+
+request.setTableCount(...);
+request.setWindowCount(...);
+request.setOpenDuration(...);
+request.setSnapshotInterval(...);
+request.setRandomSeed(...);
+
+其他参数先使用默认值即可。
+
+==================================================
+八、前端能从引擎拿到什么数据
+
+当前前端可以从引擎拿到以下数据：
+
+engine.getStudents();
+engine.getWindowStates();
+engine.getTables();
+engine.getEventQueue();
+engine.getSnapshots();
+engine.getStatisticsResult();
+
+前端可以先用这些数据做：
+
+当前窗口数量显示
+当前学生数量显示
+当前桌位数量显示
+窗口初始化展示
+学生生成结果展示
+后续再扩展事件流、快照面板、统计面板
+==================================================
+九、一句话总结
+
+前端所有参数先装进 SimulationConfigRequest，然后统一调用 engine.applyConfig(request)，点击开始时按 engine.resetEngine() -> engine.startEngine() 的顺序执行，不要直接操作 ArrivalModule，也不要零散修改 CanteenConfig 里的静态变量。
