@@ -1,4 +1,4 @@
-package backend.model;
+package model;
 
 /**
  * 学生在食堂中的实时状态
