@@ -1,4 +1,4 @@
-package backend.model;
+package model;
 
 import java.util.Arrays;
 

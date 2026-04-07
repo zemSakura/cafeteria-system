@@ -1,4 +1,4 @@
-package backend.model;
+package model;
 
 /**
  * 窗口运行态数据

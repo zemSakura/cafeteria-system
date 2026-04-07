@@ -1,103 +1,126 @@
-package backend;
+import config.CanteenConfig;
+import config.SimulationConfigRequest;
+import engine.CanteenSimulationEngine;
+import model.Student;
+import model.WindowState;
 
-import backend.config.CanteenConfig;
-import backend.model.Student;
-import backend.model.WindowState;
-import backend.module.ArrivalModule;
-import java.util.Map;
 import java.util.List;
-import java.util.Map;
 
+/**
+ * 测试主入口
+ *
+ * 说明：
+ * 1. 这里现在不再直接 new ArrivalModule 来跑
+ * 2. 而是通过总引擎 CanteenSimulationEngine 统一管理
+ * 3. 更符合以后前后端对接方式
+ */
 public class Main {
 
     public static void main(String[] args) {
-        // 1. 校验配置
+        // =====================================================
+        // 1. 构造一份“前端传给后端”的配置请求
+        // =====================================================
+        SimulationConfigRequest request = new SimulationConfigRequest();
+
+        // 基础配置
+        request.setTableCount(180);
+        request.setWindowCount(8);
+        request.setOpenDuration(120);
+        request.setSnapshotInterval(5);
+        request.setRandomSeed(20260401L);
+
+        // 就餐时长配置
+        request.setDiningTimeMean(15.0);
+        request.setDiningTimeStd(3.0);
+        request.setMinDiningTime(5);
+
+        // 忍耐度配置
+        request.setPatienceMin(5);
+        request.setPatienceMax(15);
+
+        // 组队概率配置（总和必须为 1）
+        request.setProbSolo(0.7);
+        request.setProbDuo(0.2);
+        request.setProbTeam(0.1);
+
+        // =====================================================
+        // 2. 创建总引擎
+        // =====================================================
+        CanteenSimulationEngine engine = new CanteenSimulationEngine();
+
+        // =====================================================
+        // 3. 注入配置并启动引擎
+        // =====================================================
+        engine.applyConfig(request);
+
+        // 启动前也可以手动再校验一次
         CanteenConfig.validate();
 
-        // 2. 初始化模块
-        ArrivalModule arrivalModule = new ArrivalModule();
+        engine.startEngine();
 
-        // 3. 初始化窗口（静态 + 运行态）
-        List<WindowState> windowStates = arrivalModule.initWindowStates();
+        // =====================================================
+        // 4. 读取引擎中的初始化结果
+        // =====================================================
+        List<WindowState> windowStates = engine.getWindowStates();
+        List<Student> students = engine.getStudents();
 
-        // 4. 生成到达学生数据
-        List<Student> students = arrivalModule.generateStudents();
+        // =====================================================
+        // 5. 打印调试信息
+        // =====================================================
+        printBasicInfo(engine, windowStates, students);
 
-        // 5. 按组整理
-        Map<Integer, List<Student>> grouped = arrivalModule.groupStudentsByGroupId(students);
+        // =====================================================
+        // 6. 模拟“停止 -> 再开始”
+        //    测试 resetEngine() 是否生效
+        // =====================================================
+        System.out.println();
+        System.out.println("===== 测试停止并重启引擎 =====");
 
-        // 6. 测试输出
-        printBasicInfo(windowStates, students, grouped.size());
-        printTrafficFlowReport(students, grouped.size());
+        engine.stopEngine();
+        engine.resetEngine();
+        engine.startEngine();
+
+        System.out.println("重启后引擎概要: " + engine.getEngineSummary());
+        System.out.println("重启后学生数: " + engine.getStudentCount());
+        System.out.println("重启后窗口数: " + engine.getWindowCount());
+        System.out.println("重启后桌位数: " + engine.getTableCount());
     }
 
-    private static void printBasicInfo(List<WindowState> windowStates,
-                                       List<Student> students,
-                                       int totalGroups) {
+    /**
+     * 打印基础信息
+     *
+     * @param engine       总引擎
+     * @param windowStates 窗口运行态
+     * @param students     学生列表
+     */
+    private static void printBasicInfo(CanteenSimulationEngine engine,
+                                       List<WindowState> windowStates,
+                                       List<Student> students) {
         System.out.println("=".repeat(70));
-        System.out.println("食堂仿真系统 - 人员到来模块测试入口");
+        System.out.println("食堂仿真系统 - 后端引擎测试入口");
         System.out.println("=".repeat(70));
+
         System.out.println("时间单位说明: " + CanteenConfig.TIME_UNIT_DESCRIPTION);
-        System.out.println("营业总时长: " + CanteenConfig.OPEN_DURATION);
-        System.out.println("快照间隔: " + CanteenConfig.SNAPSHOT_INTERVAL);
+        System.out.println("当前配置: ");
+        System.out.println(CanteenConfig.dumpConfig());
+        System.out.println();
+
+        System.out.println("引擎概要: " + engine.getEngineSummary());
         System.out.println("窗口数量: " + windowStates.size());
         System.out.println("总到达人数: " + students.size());
-        System.out.println("总到达组数: " + totalGroups);
         System.out.println();
 
         System.out.println("【窗口初始化结果】");
         for (WindowState state : windowStates) {
             System.out.println("  " + state.getWindow());
         }
-        System.out.println();
-    }
-
-    /**
-     * 打印到达流量分布
-     * 这里只是测试用途，正式系统的快照输出以后交给统一模块
-     */
-    private static void printTrafficFlowReport(List<Student> students, int totalGroups) {
-        System.out.println("【人员到达分布报告】");
-
-        if (students.isEmpty()) {
-            System.out.println("未生成任何学生数据。");
-            return;
-        }
-
-        int totalPeople = students.size();
-        double avgGroupSize = totalGroups == 0 ? 0.0 : (double) totalPeople / totalGroups;
-
-        System.out.printf("总人数: %d | 总组数: %d | 平均组规模: %.2f%n",
-                totalPeople, totalGroups, avgGroupSize);
-
-        int bucketSize = CanteenConfig.SNAPSHOT_INTERVAL;
-        int bucketCount = (CanteenConfig.OPEN_DURATION + bucketSize - 1) / bucketSize;
-        int[] distribution = new int[bucketCount];
-
-        for (Student s : students) {
-            int index = (int) (s.getArrivalTime() / bucketSize);
-            if (index >= bucketCount) {
-                index = bucketCount - 1;
-            }
-            distribution[index]++;
-        }
 
         System.out.println();
-        System.out.println("时间区间(仿真单位)    人数    直方图");
-        System.out.println("-".repeat(70));
-
-        for (int i = 0; i < bucketCount; i++) {
-            int start = i * bucketSize;
-            int end = Math.min((i + 1) * bucketSize, CanteenConfig.OPEN_DURATION);
-            int count = distribution[i];
-
-            String bar = count == 0 ? "" : "*".repeat(Math.max(1, count / 2));
-            System.out.printf("[%3d, %3d)        %-5d   %s%n", start, end, count, bar);
+        System.out.println("【前 20 个学生样例】");
+        for (int i = 0; i < Math.min(20, students.size()); i++) {
+            System.out.println("  " + students.get(i));
         }
 
-        System.out.println("-".repeat(70));
-        System.out.println("说明：当前只是“到达模块测试入口”，不是最终总仿真入口。");
-        System.out.println("后续排队、服务、入座、离开应由统一事件驱动引擎接管。");
         System.out.println("=".repeat(70));
     }
 }

@@ -1,6 +1,7 @@
-package backend.model;
+package model;
 
-import backend.config.CanteenConfig;
+import config.CanteenConfig;
+
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
