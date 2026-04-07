@@ -1,4 +1,4 @@
-package module;
+package backend.module;
 
 import config.CanteenConfig;
 import model.EventType;
@@ -49,6 +49,8 @@ public class ArrivalModule implements Runnable {
      */
     private Random random;
 
+    private javax.swing.JTextArea logArea;
+
     /**
      * 默认构造：使用系统当前随机种子
      */
@@ -86,6 +88,10 @@ public class ArrivalModule implements Runnable {
         this.random = new Random(seed);
     }
 
+    public ArrivalModule(BlockingQueue<Student> queue, javax.swing.JTextArea logArea) {
+        this(queue, CanteenConfig.RANDOM_SEED);
+        this.logArea = logArea;
+    }
     /**
      * 重新开始前重置内部状态
      *
@@ -292,24 +298,53 @@ public class ArrivalModule implements Runnable {
      * - 只把生成的学生塞进队列
      * - 不负责 sleep，不负责打印
      */
+    /**
+     * 【融合版 run】：结合了队友的队列处理与你的 UI 动画特效
+     */
     @Override
     public void run() {
-        if (queue == null) {
-            return;
-        }
+        if (queue == null) return;
 
         List<Student> students = generateStudents();
+        safeLog(">>> [系统] 后端剧本生成完毕，共计 " + students.size() + " 名学生准备就餐。");
 
         for (Student student : students) {
+            // 检查前端是否点击了停止
+            if (Thread.currentThread().isInterrupted()) {
+                safeLog(">>> [系统] 收到中断信号，停止播放学生抵达画面。");
+                return;
+            }
+
             try {
                 queue.put(student);
+
+                safeLog(String.format(">>> [抵达] 时间戳:%03d | 学生 %03d | 目标窗口:%d",
+                        student.getArrivalTime(), student.getId(), student.getPreferredWindow()));
+
+                // 恢复你的快进视觉特效
+                Thread.sleep(50);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+                safeLog(">>> [系统] 引擎被强制叫停。");
                 return;
             }
         }
+        safeLog(">>> [系统] 所有学生已抵达完毕，仿真结束。");
     }
 
+    /**
+     * 【补回】：Swing 线程安全的日志打印方法
+     */
+    private void safeLog(String msg) {
+        if (logArea != null) {
+            javax.swing.SwingUtilities.invokeLater(() -> {
+                logArea.append(msg + "\n");
+                logArea.setCaretPosition(logArea.getDocument().getLength());
+            });
+        } else {
+            System.out.println("[后端离线日志警告] " + msg);
+        }
+    }
     /**
      * 采样下一次到达间隔
      *

@@ -82,20 +82,16 @@ public class MainDashboard {
             frontend.SimulationConfigDTO dto = configDialog.getConfigData();
 
             // 4. 【过渡期操作】：在后端组员改造完之前，我们先手动把这些值硬塞给后端的静态变量
-            backend.config.CanteenConfig.TOTAL_TABLES = dto.totalTables;
-            backend.config.CanteenConfig.OPEN_DURATION = dto.openDuration;
-            // CanteenConfig.PROB_SOLO = dto.probSolo; // (如果你后端有这个变量的话)
-            // CanteenConfig.RANDOM_SEED = dto.randomSeed; // (同上)
+            config.CanteenConfig.TOTAL_TABLES = dto.totalTables;
+            config.CanteenConfig.OPEN_DURATION = dto.openDuration;
 
-            // 【新增的核心逻辑】：动态重建窗口数组！
             int wCount = dto.windowCount;
-            backend.config.CanteenConfig.WINDOW_DISTANCES = new int[wCount];
-            backend.config.CanteenConfig.WINDOW_AVG_SERVE_TIME = new int[wCount];
+            config.CanteenConfig.WINDOW_DISTANCES = new int[wCount];
+            config.CanteenConfig.WINDOW_AVG_SERVE_TIME = new int[wCount];
 
-            // 给新生成的窗口赋予默认的物理属性（距离和打饭时间）
             for (int i = 0; i < wCount; i++) {
-                backend.config.CanteenConfig.WINDOW_DISTANCES[i] = 10 + (i * 5); // 距离排开：10, 15, 20...
-                backend.config.CanteenConfig.WINDOW_AVG_SERVE_TIME[i] = 2;       // 平均服务时间统一设为 2 分钟
+                config.CanteenConfig.WINDOW_DISTANCES[i] = 10 + (i * 5);
+                config.CanteenConfig.WINDOW_AVG_SERVE_TIME[i] = 2;
             }
 
             // 5. 更新物理画面
@@ -114,7 +110,7 @@ public class MainDashboard {
             delayTimer = new javax.swing.Timer(1000, event -> {
                 logTextArea.append(">>> 仿真引擎启动成功！学生正在抵达...\n");
 
-                java.util.concurrent.BlockingQueue<backend.model.Student> arrivalQueue =
+                java.util.concurrent.BlockingQueue<model.Student> arrivalQueue =
                         new java.util.concurrent.LinkedBlockingQueue<>(2000);
 
                 backend.module.ArrivalModule arrivalModule = new backend.module.ArrivalModule(arrivalQueue, logTextArea);

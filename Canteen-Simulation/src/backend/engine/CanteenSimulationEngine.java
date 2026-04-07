@@ -8,7 +8,7 @@ import model.StatisticsResult;
 import model.Student;
 import model.Table;
 import model.WindowState;
-import module.ArrivalModule;
+import backend.module.ArrivalModule;
 
 import java.util.ArrayList;
 import java.util.List;

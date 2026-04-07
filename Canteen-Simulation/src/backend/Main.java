@@ -1,3 +1,5 @@
+package backend;
+
 import config.CanteenConfig;
 import config.SimulationConfigRequest;
 import engine.CanteenSimulationEngine;
