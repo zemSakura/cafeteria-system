@@ -5,31 +5,28 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="fe51aa56-e3bc-4398-aa77-2a97374539d4" name="更改" comment="这是我的测试">
+      <change afterPath="$PROJECT_DIR$/Canteen-Simulation/src/frontend/SimulationEventListener.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Canteen-Simulation/src/backend/Main.java" beforeDir="false" afterPath="$PROJECT_DIR$/Canteen-Simulation/src/backend/Main.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Canteen-Simulation/src/backend/engine/CanteenSimulationEngine.java" beforeDir="false" afterPath="$PROJECT_DIR$/Canteen-Simulation/src/backend/engine/CanteenSimulationEngine.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Canteen-Simulation/src/backend/module/ArrivalModule.java" beforeDir="false" afterPath="$PROJECT_DIR$/Canteen-Simulation/src/backend/module/ArrivalModule.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Canteen-Simulation/src/frontend/DiningAreaPanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/Canteen-Simulation/src/frontend/DiningAreaPanel.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Canteen-Simulation/src/frontend/MainDashboard.java" beforeDir="false" afterPath="$PROJECT_DIR$/Canteen-Simulation/src/frontend/MainDashboard.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/Main.class" beforeDir="false" afterPath="$PROJECT_DIR$/out/production/cafeteria-system/backend/Main.class" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/config/CanteenConfig.class" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/model/EventType.class" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/model/Group.class" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/model/SimulationEvent.class" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/model/StateSnapshot.class" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/model/StatisticsResult.class" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/model/Student$1.class" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/model/Student.class" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/model/StudentStatus.class" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/model/Table.class" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/model/Window.class" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/model/WindowState.class" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/module/ArrivalModule.class" beforeDir="false" afterPath="$PROJECT_DIR$/out/production/cafeteria-system/backend/module/ArrivalModule.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/Main.class" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/backend/module/ArrivalModule.class" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/frontend/DiningAreaPanel$1.class" beforeDir="false" afterPath="$PROJECT_DIR$/out/production/cafeteria-system/frontend/DiningAreaPanel$1.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/frontend/DiningAreaPanel$2.class" beforeDir="false" afterPath="$PROJECT_DIR$/out/production/cafeteria-system/frontend/DiningAreaPanel$2.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/frontend/DiningAreaPanel.class" beforeDir="false" afterPath="$PROJECT_DIR$/out/production/cafeteria-system/frontend/DiningAreaPanel.class" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/frontend/MainDashboard.class" beforeDir="false" afterPath="$PROJECT_DIR$/out/production/cafeteria-system/frontend/MainDashboard.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/frontend/QueueAreaPanel.class" beforeDir="false" afterPath="$PROJECT_DIR$/out/production/cafeteria-system/frontend/QueueAreaPanel.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/frontend/SimulationConfigDTO.class" beforeDir="false" afterPath="$PROJECT_DIR$/out/production/cafeteria-system/frontend/SimulationConfigDTO.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/cafeteria-system/frontend/SimulationConfigDialog.class" beforeDir="false" afterPath="$PROJECT_DIR$/out/production/cafeteria-system/frontend/SimulationConfigDialog.class" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="EmbeddingIndexingInfo">
+    <option name="cachedIndexableFilesCount" value="34" />
   </component>
   <component name="FileTemplateManagerImpl">
     <option name="RECENT_TEMPLATES">
@@ -50,7 +47,7 @@
   <component name="GithubPullRequestsUISettings">{
   &quot;selectedUrlAndAccountId&quot;: {
     &quot;url&quot;: &quot;https://github.com/zemSakura/cafeteria-system.git&quot;,
-    &quot;accountId&quot;: &quot;afcc4d7d-7508-498d-8037-207743dfbb69&quot;
+    &quot;accountId&quot;: &quot;4d07c803-566d-4394-a71c-bf7e0c3e306b&quot;
   }
 }</component>
   <component name="McpProjectServerCommands">
@@ -68,27 +65,37 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ASKED_SHARE_PROJECT_CONFIGURATION_FILES": "true",
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
-    "git-widget-placeholder": "ui-init",
-    "kotlin-language-version-configured": "true",
-    "last_opened_file_path": "C:/Users/HS/IdeaProjects/CanteenSimulation/Canteen-Simulation",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "onboarding.tips.debug.path": "C:/Users/HS/IdeaProjects/CanteenSimulation/src/Main.java",
-    "project.structure.last.edited": "项目",
-    "project.structure.proportion": "0.0",
-    "project.structure.side.proportion": "0.0",
-    "settings.editor.selected.configurable": "org.jetbrains.plugins.github.ui.GithubSettingsConfigurable",
-    "应用程序.Main.executor": "Run",
-    "应用程序.MainDashboard.executor": "Run"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ASKED_SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
+    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
+    &quot;com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;ui-init&quot;,
+    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
+    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
+    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/HS/IdeaProjects/CanteenSimulation/Canteen-Simulation&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;onboarding.tips.debug.path&quot;: &quot;C:/Users/HS/IdeaProjects/CanteenSimulation/src/Main.java&quot;,
+    &quot;project.structure.last.edited&quot;: &quot;项目&quot;,
+    &quot;project.structure.proportion&quot;: &quot;0.15&quot;,
+    &quot;project.structure.side.proportion&quot;: &quot;0.2&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;org.jetbrains.plugins.github.ui.GithubSettingsConfigurable&quot;,
+    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;,
+    &quot;应用程序.Main.executor&quot;: &quot;Run&quot;,
+    &quot;应用程序.MainDashboard.executor&quot;: &quot;Run&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="C:\Users\HS\IdeaProjects\CanteenSimulation\Canteen-Simulation" />
@@ -114,7 +121,8 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-jdk-30f59d01ecdd-2fc7cc6b9a17-intellij.indexing.shared.core-IU-253.30387.90" />
+        <option value="bundled-jdk-30f59d01ecdd-2fc7cc6b9a17-intellij.indexing.shared.core-IU-253.31033.145" />
+        <option value="bundled-js-predefined-d6986cc7102b-9b0f141eb926-JavaScript-IU-253.31033.145" />
       </set>
     </attachedChunks>
   </component>
@@ -125,6 +133,10 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1773729720813</updated>
+      <workItem from="1776038779533" duration="25000" />
+      <workItem from="1776329489002" duration="12000" />
+      <workItem from="1776329538090" duration="3245000" />
+      <workItem from="1776343093662" duration="2264000" />
     </task>
     <task id="LOCAL-00001" summary="这是我的测试">
       <option name="closed" value="true" />
@@ -136,6 +148,9 @@
     </task>
     <option name="localTasksCounter" value="2" />
     <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="这是我的测试" />
