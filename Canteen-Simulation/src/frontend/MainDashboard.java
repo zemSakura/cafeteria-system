@@ -5,11 +5,13 @@ import java.awt.*;
 
 import static java.lang.Thread.sleep;
 
-public class MainDashboard {
+public class MainDashboard extends JFrame implements SimulationEventListener {
 
     // 创建一个全局的 DiningAreaPanel 对象，用于后续的更新
     private static frontend.DiningAreaPanel myDiningPanel;
     private static frontend.QueueAreaPanel myQueuePanel;
+    private static javax.swing.JButton startButton;
+    private static MainDashboard frame;
 
     // 声明线程变量，初始为 null
     private static Thread arrivalThread = null;
@@ -22,7 +24,8 @@ public class MainDashboard {
     }
 
     private static void createAndShowGUI() {
-        JFrame frame = new JFrame("北京交通大学就餐仿真系统 - 总控台大屏");
+        frame = new MainDashboard();
+        frame.setTitle("北京交通大学就餐仿真系统 - 总控台大屏");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setSize(1200, 800);
         frame.setLayout(new BorderLayout(10, 10));
@@ -59,7 +62,7 @@ public class MainDashboard {
         panel.setBorder(BorderFactory.createTitledBorder("Initialization Config"));
 
         // 1. 先给组件“上户口”（声明实体变量，有了名字才能被调用）
-        JButton startButton = new JButton("▶ 开始仿真");
+        startButton = new javax.swing.JButton("▶ 开始仿真");
         JButton stopButton = new JButton("■ 停止仿真");
 
         // 2. 将带有名字的组件装进面板
@@ -124,6 +127,7 @@ public class MainDashboard {
             delayTimer.start();
         });
 
+
         // 停止按钮
         stopButton.addActionListener(e -> {
             // 1. 【新增逻辑】检查是否正在“点火中”
@@ -174,5 +178,35 @@ public class MainDashboard {
         panel.add(scrollPane, BorderLayout.CENTER);
 
         return panel;
+    }
+
+    @Override
+    public void onStudentArrived(int studentId, long time) {
+        javax.swing.SwingUtilities.invokeLater(() -> {
+            logTextArea.append(String.format(">>> [%d] 学生 %d 抵达食堂\n", time, studentId));
+            logTextArea.setCaretPosition(logTextArea.getDocument().getLength());
+        });
+    }
+
+    @Override
+    public void onWindowQueueUpdated(int windowIndex, int queueLength) {
+        javax.swing.SwingUtilities.invokeLater(() -> {
+            myQueuePanel.updateQueueLength(windowIndex, queueLength);
+        });
+    }
+
+    @Override
+    public void onTableStatusChanged(int tableIndex, boolean isOccupied) {
+        javax.swing.SwingUtilities.invokeLater(() -> {
+            myDiningPanel.updateTableStatus(tableIndex, isOccupied);
+        });
+    }
+
+    @Override
+    public void onSimulationFinished() {
+        javax.swing.SwingUtilities.invokeLater(() -> {
+            javax.swing.JOptionPane.showMessageDialog(this, "本次仿真已圆满结束！");
+            startButton.setEnabled(true);
+        });
     }
 }

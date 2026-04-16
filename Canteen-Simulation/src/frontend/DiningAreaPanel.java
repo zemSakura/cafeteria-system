@@ -75,4 +75,41 @@ public class DiningAreaPanel extends JPanel {
 
         return responsiveWrapper;
     }
+
+    // 【核心接口】：给后端调用的桌子变色方法
+    public void updateTableStatus(int tableIndex, boolean isOccupied) {
+        if (tableIndex >= 0 && tableIndex < this.getComponentCount()) {
+            java.awt.Component comp = this.getComponent(tableIndex);
+            if (comp instanceof javax.swing.JPanel) {
+                javax.swing.JPanel tablePanel = (javax.swing.JPanel) comp;
+
+                // 决定要涂的颜色：浅红代表有人，纯白代表空闲
+                java.awt.Color targetColor = isOccupied ?
+                        new java.awt.Color(255, 200, 200) : java.awt.Color.WHITE;
+
+                // 呼叫辅助魔法，深入托盘内部给座位上色
+                colorAllSeats(tablePanel, targetColor);
+
+                tablePanel.repaint(); // 强制重绘
+            }
+        }
+    }
+
+    // =========================================
+    // 【新增辅助魔法】：递归寻找所有的“座位方块”并上色
+    // =========================================
+    private void colorAllSeats(java.awt.Container container, java.awt.Color color) {
+        for (java.awt.Component c : container.getComponents()) {
+            if (c instanceof javax.swing.JPanel) {
+                javax.swing.JPanel p = (javax.swing.JPanel) c;
+                // 核心判断逻辑：在你的 UI 里，座位是最底层的小方块（里面没有其他组件了）
+                if (p.getComponentCount() == 0) {
+                    p.setBackground(color);
+                } else {
+                    // 如果它是装座位的网格容器（比如那个 2x2 的 JPanel），就继续往里挖
+                    colorAllSeats(p, color);
+                }
+            }
+        }
+    }
 }
