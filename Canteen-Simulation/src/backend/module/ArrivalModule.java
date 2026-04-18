@@ -157,7 +157,7 @@ public class ArrivalModule {
         while (virtualTime < CanteenConfig.OPEN_DURATION) {
             double progress = (double) virtualTime / CanteenConfig.OPEN_DURATION;
 
-            double lambda = 0.05 + 0.45 * Math.sin(Math.PI * progress);
+            double lambda = 0.28 + 1.35 * Math.sin(Math.PI * progress);
             if (lambda <= 0) {
                 lambda = 0.01;
             }

@@ -191,13 +191,13 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
     }
 
     @Override
-    public void onTableStatusChanged(int tableIndex, boolean isOccupied) {
+    public void onTableOccupancyChanged(int tableIndex, int occupiedSeats) {
         SwingUtilities.invokeLater(() -> {
-            myDiningPanel.updateTableStatus(tableIndex, isOccupied);
+            myDiningPanel.updateTableOccupancy(tableIndex, occupiedSeats);
             logTextArea.append(String.format(
-                    ">>> [桌位] 桌 %02d %s%n",
+                    ">>> [桌位] 桌 %02d 当前入座人数: %d%n",
                     tableIndex + 1,
-                    isOccupied ? "已占用" : "已释放"
+                    occupiedSeats
             ));
             logTextArea.setCaretPosition(logTextArea.getDocument().getLength());
         });
@@ -208,7 +208,8 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         SwingUtilities.invokeLater(() -> {
             startButton.setEnabled(true);
             stopButton.setEnabled(false);
-            appendLog(">>> [系统] 本次仿真已结束。");
+            logTextArea.append(">>> [系统] 本次仿真已结束。\n");
+            logTextArea.setCaretPosition(logTextArea.getDocument().getLength());
             JOptionPane.showMessageDialog(this, "本次仿真已圆满结束！");
         });
     }
