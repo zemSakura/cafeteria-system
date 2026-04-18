@@ -1,13 +1,13 @@
-package engine;
+package backend.engine;
 
-import config.CanteenConfig;
-import config.SimulationConfigRequest;
-import model.SimulationEvent;
-import model.StateSnapshot;
-import model.StatisticsResult;
-import model.Student;
-import model.Table;
-import model.WindowState;
+import backend.config.CanteenConfig;
+import backend.config.SimulationConfigRequest;
+import backend.model.SimulationEvent;
+import backend.model.StateSnapshot;
+import backend.model.StatisticsResult;
+import backend.model.Student;
+import backend.model.Table;
+import backend.model.WindowState;
 import backend.module.ArrivalModule;
 
 import java.util.ArrayList;

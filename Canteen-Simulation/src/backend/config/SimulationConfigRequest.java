@@ -1,4 +1,4 @@
-package config;
+package backend.config;
 
 /**
  * 前端 -> 后端 的统一配置请求对象

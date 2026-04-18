@@ -1,4 +1,4 @@
-package config;
+package backend.config;
 
 import java.util.Arrays;
 

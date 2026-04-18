@@ -1,4 +1,4 @@
-package model;
+package backend.model;
 
 /**
  * 桌位模型

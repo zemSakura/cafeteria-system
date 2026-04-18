@@ -1,12 +1,12 @@
 package backend.module;
 
-import config.CanteenConfig;
-import model.EventType;
-import model.Group;
-import model.SimulationEvent;
-import model.Student;
-import model.Window;
-import model.WindowState;
+import backend.config.CanteenConfig;
+import backend.model.EventType;
+import backend.model.Group;
+import backend.model.SimulationEvent;
+import backend.model.Student;
+import backend.model.Window;
+import backend.model.WindowState;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -18,38 +18,34 @@ import java.util.concurrent.BlockingQueue;
 /**
  * 人员到来模块
  *
- * 主要职责：
+ * 当前职责：
  * 1. 根据当前配置初始化窗口
  * 2. 生成学生到达数据
  * 3. 生成到达事件
  * 4. 为后续引擎提供数据源
  *
- * 改造点：
- * 1. 支持动态窗口配置
- * 2. 支持 reset 后重复运行
- * 3. 支持随机种子重置，保证同参数下可复现实验
+ * 注意：
+ * - 本类现在是“纯后端数据模块”
+ * - 不再直接操作任何 Swing UI 组件
+ * - 不再承担仿真播放职责
  */
-public class ArrivalModule implements Runnable {
+public class ArrivalModule {
 
     /**
-     * 兼容旧版演示入口保留的字段
-     * 如果旧代码还在用 BlockingQueue，可以继续保留
+     * 为了兼容旧代码保留这个字段
+     * 当前正式版引擎并不依赖它
      */
     private final BlockingQueue<Student> queue;
 
     /**
-     * 当前模块所使用的随机种子
-     * reset 时可以重新设置
+     * 当前模块使用的随机种子
      */
     private long seed;
 
     /**
-     * 随机数对象不再 final
-     * 因为 reset 时需要重新 new
+     * 随机数对象
      */
     private Random random;
-
-    private javax.swing.JTextArea logArea;
 
     /**
      * 默认构造：使用系统当前随机种子
@@ -60,8 +56,6 @@ public class ArrivalModule implements Runnable {
 
     /**
      * 指定种子构造
-     *
-     * @param seed 随机种子
      */
     public ArrivalModule(long seed) {
         this(null, seed);
@@ -69,8 +63,6 @@ public class ArrivalModule implements Runnable {
 
     /**
      * 旧版兼容构造
-     *
-     * @param queue 阻塞队列
      */
     public ArrivalModule(BlockingQueue<Student> queue) {
         this(queue, CanteenConfig.RANDOM_SEED);
@@ -78,9 +70,6 @@ public class ArrivalModule implements Runnable {
 
     /**
      * 最完整构造
-     *
-     * @param queue 阻塞队列
-     * @param seed  随机种子
      */
     public ArrivalModule(BlockingQueue<Student> queue, long seed) {
         this.queue = queue;
@@ -88,20 +77,11 @@ public class ArrivalModule implements Runnable {
         this.random = new Random(seed);
     }
 
-    public ArrivalModule(BlockingQueue<Student> queue, javax.swing.JTextArea logArea) {
-        this(queue, CanteenConfig.RANDOM_SEED);
-        this.logArea = logArea;
-    }
     /**
      * 重新开始前重置内部状态
-     *
-     * 作用：
-     * 1. 重置随机数生成器
-     * 2. 清空旧阻塞队列
      */
     public void resetForNextRun() {
         this.random = new Random(this.seed);
-
         if (this.queue != null) {
             this.queue.clear();
         }
@@ -109,34 +89,21 @@ public class ArrivalModule implements Runnable {
 
     /**
      * 使用新的随机种子重置
-     *
-     * @param newSeed 新随机种子
      */
     public void resetForNextRun(long newSeed) {
         this.seed = newSeed;
         this.random = new Random(newSeed);
-
         if (this.queue != null) {
             this.queue.clear();
         }
     }
 
-    /**
-     * 获取当前随机种子
-     *
-     * @return seed
-     */
     public long getSeed() {
         return seed;
     }
 
     /**
      * 初始化窗口静态配置
-     *
-     * 这里直接读取当前 CanteenConfig 中的窗口数组
-     * 因此一旦配置动态更新，这里会自动适配
-     *
-     * @return 窗口列表
      */
     public List<Window> initWindows() {
         List<Window> windows = new ArrayList<>();
@@ -154,8 +121,6 @@ public class ArrivalModule implements Runnable {
 
     /**
      * 初始化窗口运行态
-     *
-     * @return 窗口运行态列表
      */
     public List<WindowState> initWindowStates() {
         List<Window> windows = initWindows();
@@ -171,28 +136,28 @@ public class ArrivalModule implements Runnable {
     /**
      * 生成学生到达数据
      *
-     * 说明：
-     * 1. 这里只管“谁在什么时候来”
-     * 2. 不负责排队/服务/入座/离开
+     * 这里只负责：
+     * - 谁来
+     * - 什么时候来
+     * - 带什么属性来
      *
-     * @return 学生列表
+     * 不负责：
+     * - 排队
+     * - 服务
+     * - 入座
+     * - 离开
      */
     public List<Student> generateStudents() {
         List<Student> students = new ArrayList<>();
 
-        // 注意：这里是局部计数器
-        // 每次 generateStudents() 都会从 1 开始，不会脏数据叠加
         int studentIdCounter = 1;
         int groupIdCounter = 1;
         long virtualTime = 0;
 
         while (virtualTime < CanteenConfig.OPEN_DURATION) {
-            // 进度比例，用于模拟中间高峰、两边低峰的人流分布
             double progress = (double) virtualTime / CanteenConfig.OPEN_DURATION;
 
-            // 中间高、两边低：午餐高峰更明显
             double lambda = 0.05 + 0.45 * Math.sin(Math.PI * progress);
-
             if (lambda <= 0) {
                 lambda = 0.01;
             }
@@ -206,7 +171,6 @@ public class ArrivalModule implements Runnable {
 
             int groupSize = determineGroupSize();
 
-            // 同一个 groupId 下创建 groupSize 个学生
             for (int i = 0; i < groupSize; i++) {
                 int diningTime = generateDiningTime();
                 int preferredWindow = generatePreferredWindow();
@@ -232,9 +196,6 @@ public class ArrivalModule implements Runnable {
 
     /**
      * 按 groupId 整理学生
-     *
-     * @param students 学生列表
-     * @return 分组后的 Map
      */
     public Map<Integer, List<Student>> groupStudentsByGroupId(List<Student> students) {
         Map<Integer, List<Student>> grouped = new LinkedHashMap<>();
@@ -248,8 +209,6 @@ public class ArrivalModule implements Runnable {
 
     /**
      * 直接生成 Group 列表
-     *
-     * @return Group 列表
      */
     public List<Group> generateGroups() {
         List<Student> students = generateStudents();
@@ -266,14 +225,10 @@ public class ArrivalModule implements Runnable {
     }
 
     /**
-     * 直接生成到达事件
-     *
-     * 当前只生成 ARRIVAL 事件
-     *
-     * @return 事件列表
+     * 根据给定学生列表生成到达事件
+     * 推荐正式引擎优先使用这个版本，避免重复随机生成造成不一致
      */
-    public List<SimulationEvent> generateArrivalEvents() {
-        List<Student> students = generateStudents();
+    public List<SimulationEvent> generateArrivalEvents(List<Student> students) {
         List<SimulationEvent> events = new ArrayList<>();
 
         for (Student student : students) {
@@ -292,76 +247,18 @@ public class ArrivalModule implements Runnable {
     }
 
     /**
-     * 保留 Runnable：兼容旧版测试写法
-     *
-     * 作用：
-     * - 只把生成的学生塞进队列
-     * - 不负责 sleep，不负责打印
+     * 保留旧版无参方法，兼容原先代码
      */
-    /**
-     * 【融合版 run】：结合了队友的队列处理与你的 UI 动画特效
-     */
-    @Override
-    public void run() {
-        if (queue == null) return;
-
-        List<Student> students = generateStudents();
-        safeLog(">>> [系统] 后端剧本生成完毕，共计 " + students.size() + " 名学生准备就餐。");
-
-        for (Student student : students) {
-            // 检查前端是否点击了停止
-            if (Thread.currentThread().isInterrupted()) {
-                safeLog(">>> [系统] 收到中断信号，停止播放学生抵达画面。");
-                return;
-            }
-
-            try {
-                queue.put(student);
-
-                safeLog(String.format(">>> [抵达] 时间戳:%03d | 学生 %03d | 目标窗口:%d",
-                        student.getArrivalTime(), student.getId(), student.getPreferredWindow()));
-
-                // 恢复你的快进视觉特效
-                Thread.sleep(50);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                safeLog(">>> [系统] 引擎被强制叫停。");
-                return;
-            }
-        }
-        safeLog(">>> [系统] 所有学生已抵达完毕，仿真结束。");
+    public List<SimulationEvent> generateArrivalEvents() {
+        return generateArrivalEvents(generateStudents());
     }
 
-    /**
-     * 【补回】：Swing 线程安全的日志打印方法
-     */
-    private void safeLog(String msg) {
-        if (logArea != null) {
-            javax.swing.SwingUtilities.invokeLater(() -> {
-                logArea.append(msg + "\n");
-                logArea.setCaretPosition(logArea.getDocument().getLength());
-            });
-        } else {
-            System.out.println("[后端离线日志警告] " + msg);
-        }
-    }
-    /**
-     * 采样下一次到达间隔
-     *
-     * @param lambda 泊松过程参数
-     * @return 下一个到达间隔
-     */
     private int sampleArrivalGap(double lambda) {
         double u = random.nextDouble();
         double gap = -Math.log(1 - u) / lambda;
         return Math.max(1, (int) Math.ceil(gap));
     }
 
-    /**
-     * 随机决定小组人数
-     *
-     * @return 1 / 2 / 4
-     */
     private int determineGroupSize() {
         double r = random.nextDouble();
 
@@ -376,11 +273,6 @@ public class ArrivalModule implements Runnable {
         return 4;
     }
 
-    /**
-     * 生成就餐时长
-     *
-     * @return 就餐时长
-     */
     private int generateDiningTime() {
         double gaussian = random.nextGaussian();
         int result = (int) Math.round(
@@ -390,20 +282,10 @@ public class ArrivalModule implements Runnable {
         return Math.max(result, CanteenConfig.MIN_DINING_TIME);
     }
 
-    /**
-     * 随机生成倾向窗口
-     *
-     * @return 窗口编号
-     */
     private int generatePreferredWindow() {
         return random.nextInt(CanteenConfig.getWindowCount());
     }
 
-    /**
-     * 生成学生忍耐度
-     *
-     * @return 忍耐度
-     */
     private int generatePatience() {
         return CanteenConfig.PATIENCE_MIN
                 + random.nextInt(CanteenConfig.PATIENCE_MAX - CanteenConfig.PATIENCE_MIN + 1);

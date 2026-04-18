@@ -1,4 +1,4 @@
-package model;
+package backend.model;
 
 /**
  * 窗口静态配置模型
