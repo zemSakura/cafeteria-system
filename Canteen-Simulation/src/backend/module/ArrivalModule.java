@@ -145,18 +145,23 @@ public class ArrivalModule {
         Map<MealPeriod, MealArrivalStats> mealStats = new LinkedHashMap<>();
 
         int[] counters = {1, 1};
-        int simulationStartMinuteOfDay = periods.get(0).getStartMinute();
+        int simulationBaseMinute = 0;
 
-        for (MealPeriod period : periods) {
+        for (int i = 0; i < periods.size(); i++) {
+            MealPeriod period = periods.get(i);
             int population = populations.get(period);
             PeriodGeneration generation = generatePeriodStudents(
                     period,
                     population,
-                    simulationStartMinuteOfDay,
+                    simulationBaseMinute,
                     counters
             );
             students.addAll(generation.students);
             mealStats.put(period, generation.stats);
+
+            if (mode == SimulationMode.FULL_DAY) {
+                simulationBaseMinute += period.getDurationMinutes();
+            }
         }
 
         students.sort(Comparator.comparingLong(Student::getArrivalTime)
@@ -287,7 +292,7 @@ public class ArrivalModule {
 
     private PeriodGeneration generatePeriodStudents(MealPeriod period,
                                                     int population,
-                                                    int simulationStartMinuteOfDay,
+                                                    int simulationBaseMinute,
                                                     int[] counters) {
         int backgroundPopulation = (int) Math.round(population * CanteenConfig.BACKGROUND_FLOW_RATIO);
         backgroundPopulation = Math.min(Math.max(backgroundPopulation, 1), population);
@@ -298,11 +303,11 @@ public class ArrivalModule {
                 period,
                 backgroundPopulation,
                 peaks,
-                simulationStartMinuteOfDay
+                simulationBaseMinute
         );
 
         List<ArrivalCandidate> candidates = new ArrayList<>();
-        addBackgroundCandidates(candidates, period, backgroundPopulation, "background");
+        addBackgroundCandidates(candidates, period, backgroundPopulation);
         addPeakCandidates(candidates, period, peakPopulation, peaks);
 
         candidates.sort(Comparator.comparingInt(candidate -> candidate.minuteOfDay));
@@ -316,7 +321,7 @@ public class ArrivalModule {
             int groupMinute = candidates.get(index).minuteOfDay;
             CrowdType groupCrowdType = candidates.get(index).crowdType;
             String source = candidates.get(index).source;
-            long groupArrivalTime = toSimulationMinute(groupMinute, simulationStartMinuteOfDay);
+            long groupArrivalTime = toSimulationMinute(period, groupMinute, simulationBaseMinute);
 
             for (int i = 0; i < groupSize; i++) {
                 ArrivalCandidate candidate = candidates.get(index + i);
@@ -383,7 +388,7 @@ public class ArrivalModule {
     private List<ArrivalDistributionPoint> createDistributionPoints(MealPeriod period,
                                                                     int backgroundPopulation,
                                                                     List<ArrivalPeak> peaks,
-                                                                    int simulationStartMinuteOfDay) {
+                                                                    int simulationBaseMinute) {
         List<ArrivalDistributionPoint> points = new ArrayList<>();
         double base = backgroundPopulation / (double) period.getDurationMinutes();
 
@@ -395,7 +400,7 @@ public class ArrivalModule {
             points.add(new ArrivalDistributionPoint(
                     period,
                     minute,
-                    toSimulationMinute(minute, simulationStartMinuteOfDay),
+                    toSimulationMinute(period, minute, simulationBaseMinute),
                     base,
                     peakIntensity,
                     base + peakIntensity
@@ -407,14 +412,20 @@ public class ArrivalModule {
 
     private void addBackgroundCandidates(List<ArrivalCandidate> candidates,
                                          MealPeriod period,
-                                         int count,
-                                         String source) {
+                                         int count) {
+        int startMinute = period.getStartMinute();
+        int endMinute = period.getEndMinute();
+        int duration = Math.max(1, period.getDurationMinutes());
+
+        // Stratified sampling avoids long blank stretches inside one meal period.
         for (int i = 0; i < count; i++) {
-            int minute = period.getStartMinute() + random.nextInt(period.getDurationMinutes() + 1);
+            double segmentStart = startMinute + (duration * i / (double) count);
+            double segmentEnd = startMinute + (duration * (i + 1) / (double) count);
+            int minute = (int) Math.floor(segmentStart + random.nextDouble() * Math.max(1.0, segmentEnd - segmentStart));
             candidates.add(new ArrivalCandidate(
-                    clamp(minute, period.getStartMinute(), period.getEndMinute()),
+                    clamp(minute, startMinute, endMinute),
                     determineCrowdType(),
-                    source
+                    "background"
             ));
         }
     }
@@ -451,8 +462,8 @@ public class ArrivalModule {
         }
     }
 
-    private int toSimulationMinute(int minuteOfDay, int simulationStartMinuteOfDay) {
-        return Math.max(0, minuteOfDay - simulationStartMinuteOfDay);
+    private int toSimulationMinute(MealPeriod period, int minuteOfDay, int simulationBaseMinute) {
+        return simulationBaseMinute + Math.max(0, minuteOfDay - period.getStartMinute());
     }
 
     private double gaussianIntensity(int minuteOfDay, ArrivalPeak peak) {

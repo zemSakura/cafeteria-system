@@ -277,6 +277,14 @@ request.setMealPeriod("lunch");
 - 后端会自动生成早餐、午餐、晚餐。
 - 三餐到达事件会合并为一份按时间排序的 arrivalEvents。
 - result.getMealStats() 中包含 BREAKFAST、LUNCH、DINNER 三个餐段的统计。
+- 全天模式采用“餐段连续拼接”的仿真时间轴，不会保留真实钟表时间中的餐间空档。
+- 也就是说，早餐模拟结束后会直接进入午餐模拟，午餐模拟结束后会直接进入晚餐模拟。
+- 默认每个餐段 150 分钟，因此全天播放时间轴大致为：
+  早餐：0 - 150
+  午餐：150 - 300
+  晚餐：300 - 450
+- 真实餐段时间仍保存在 minuteOfDay 中，例如午餐峰值仍可显示为 11:58、12:20 等真实时间。
+- 排队模块使用的 Student.arrivalTime 也是压缩后的连续仿真时间。
 
 
 八、前端可视化数据读取方式
@@ -307,6 +315,12 @@ List<ArrivalDistributionPoint> points = lunchStats.getDistributionPoints();
 - baseIntensity：背景散客流强度
 - peakIntensity：峰值流强度
 - totalIntensity：总强度
+
+全天模式下前端可视化建议：
+- 横轴播放、动画推进、队列仿真推进使用 minuteFromSimulationStart。
+- 鼠标悬浮、标签、图例中展示真实餐段时间时使用 minuteOfDay。
+- 不要直接用 minuteOfDay 做全天播放横轴，否则早餐到午餐之间会出现 09:00-11:00 的空白，午餐到晚餐之间会出现 13:30-17:00 的空白。
+- 使用 minuteFromSimulationStart 后，全天人员到来会表现为早餐结束后直接接午餐，午餐结束后直接接晚餐。
 
 
 九、后续前端需要补充的字段
@@ -342,4 +356,3 @@ List<ArrivalDistributionPoint> points = lunchStats.getDistributionPoints();
 - backend/module
 - backend/engine
 - frontend/SimulationEventListener.java（仅作为 SimulationEngine 编译依赖读取，没有修改）
-
