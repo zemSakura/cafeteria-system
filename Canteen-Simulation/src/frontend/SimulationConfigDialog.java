@@ -16,6 +16,7 @@ public class SimulationConfigDialog extends JDialog {
     private JTextField windowCountField;
     private JTextField probSoloField;
     private JTextField seedField;
+    private JTextField studentsField;
 
     // 状态与数据
     private boolean isConfirmed = false;
@@ -24,7 +25,7 @@ public class SimulationConfigDialog extends JDialog {
     public SimulationConfigDialog(Frame parent) {
         // 设置为模态弹窗（不关掉它，就不能点后面的主界面）
         super(parent, "仿真参数初始化配置", true);
-        setSize(400, 350);
+        setSize(400, 400);
         setLocationRelativeTo(parent); // 居中显示
         setLayout(new BorderLayout(10, 10));
 
@@ -37,7 +38,7 @@ public class SimulationConfigDialog extends JDialog {
         seedField = new JTextField(String.valueOf(defaultDto.randomSeed));
 
         // 2. 组装表单面板 (使用 GridLayout 两列排布)
-        JPanel formPanel = new JPanel(new GridLayout(5, 2, 10, 15));
+        JPanel formPanel = new JPanel(new GridLayout(6, 2, 10, 15));
         formPanel.setBorder(BorderFactory.createEmptyBorder(20, 30, 20, 30));
 
         formPanel.add(new JLabel("就餐区桌子总数 (1-42):"));
@@ -45,6 +46,10 @@ public class SimulationConfigDialog extends JDialog {
 
         formPanel.add(new JLabel("营业总时长 (分钟):"));
         formPanel.add(durationField);
+
+        formPanel.add(new javax.swing.JLabel("食堂就餐总人数:"));
+        studentsField = new javax.swing.JTextField("1000"); // 默认给个1000人
+        formPanel.add(studentsField);
 
         formPanel.add(new JLabel("开放窗口数量:"));
         formPanel.add(windowCountField);
@@ -124,6 +129,7 @@ public class SimulationConfigDialog extends JDialog {
             dto.windowCount = Integer.parseInt(windowCountField.getText().trim());
             dto.probSolo = Double.parseDouble(probSoloField.getText().trim());
             dto.randomSeed = Long.parseLong(seedField.getText().trim());
+            dto.totalStudents = Integer.parseInt(studentsField.getText().trim());
 
             // 业务规则校验
             if (dto.totalTables <= 0 || dto.totalTables > 42) {
@@ -134,6 +140,9 @@ public class SimulationConfigDialog extends JDialog {
             }
             if (dto.windowCount <= 0) {
                 throw new IllegalArgumentException("窗口数量必须大于 0！");
+            }
+            if (dto.totalStudents <= 0 || dto.totalStudents > 10000) {
+                throw new IllegalArgumentException("总人数应在 1 到 10000 之间！");
             }
 
             // 校验通过，保存数据并关闭弹窗

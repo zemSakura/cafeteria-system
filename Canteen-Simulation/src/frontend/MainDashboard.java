@@ -1,5 +1,6 @@
 package frontend;
 
+import com.formdev.flatlaf.FlatDarkLaf;
 import backend.config.CanteenConfig;
 import backend.engine.SimulationEngine;
 import backend.model.Student;
@@ -26,6 +27,13 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
     private static javax.swing.Timer delayTimer;
 
     public static void main(String[] args) {
+        FlatDarkLaf.setup();
+        // 在 setup() 之后紧接着写
+        UIManager.put( "Button.arc", 15 );       // 按钮圆角
+        UIManager.put( "Component.arc", 15 );    // 输入框、下拉框圆角
+        UIManager.put( "TextComponent.arc", 15 );
+        UIManager.put( "ScrollBar.thumbArc", 999 ); // 药丸型滚动条
+
         SwingUtilities.invokeLater(MainDashboard::createAndShowGUI);
     }
 
@@ -38,8 +46,10 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
 
         frame.add(createConfigPanel(), BorderLayout.NORTH);
 
+        frame.getContentPane().setBackground(ColorTheme.BG_MAIN);
         JPanel centerPanel = new JPanel(new GridLayout(1, 2, 10, 0));
         centerPanel.setBorder(BorderFactory.createEmptyBorder(0, 10, 0, 10));
+
 
         myDiningPanel = new DiningAreaPanel(20);
         centerPanel.add(myDiningPanel);
@@ -48,6 +58,9 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         myQueuePanel = new QueueAreaPanel(5);
         myQueuePanel.setPreferredSize(new Dimension(250, 0));
         frame.add(myQueuePanel, BorderLayout.EAST);
+
+        myDiningPanel.setBackground(ColorTheme.BG_CARD);
+        myQueuePanel.setBackground(ColorTheme.BG_CARD);
 
         frame.add(createLogAreaPanel(), BorderLayout.SOUTH);
 
@@ -161,10 +174,17 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(BorderFactory.createTitledBorder("Real-time Logs (实时日志)"));
 
+
         logTextArea = new JTextArea(8, 20);
         logTextArea.setEditable(false);
+        // 确保日志文本域的底色和文字颜色也使用调色盘
+        logTextArea.setBackground(frontend.ColorTheme.BG_CARD); // 设置为极暗黑
+        logTextArea.setForeground(frontend.ColorTheme.TEXT_PRIMARY); // 字体设为亮灰白
 
         JScrollPane scrollPane = new JScrollPane(logTextArea);
+        // 【新增】：剥夺滚动条的默认线框
+        scrollPane.setBorder(BorderFactory.createEmptyBorder());
+        logTextArea.putClientProperty("JComponent.focusWidth", 0);
         panel.add(scrollPane, BorderLayout.CENTER);
 
         return panel;

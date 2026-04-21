@@ -3,46 +3,58 @@ package frontend;
 import javax.swing.*;
 import java.awt.*;
 
-// 专门负责右侧窗口排队监控的面板
 public class QueueAreaPanel extends JPanel {
 
-    // 用一个数组把所有窗口的进度条保存下来，方便以后后端传数据时修改它
     private JProgressBar[] queueBars;
 
     public QueueAreaPanel(int initialWindowCount) {
         this.setLayout(new BorderLayout());
-        this.setBorder(BorderFactory.createTitledBorder("Window Queues Monitor (窗口排队监控)"));
 
-        // 构造时直接调用刷新方法
+        // 【视觉优化 1：设置整体背景色为悬浮卡片色】
+        this.setBackground(frontend.ColorTheme.BG_CARD);
+
+        // 【视觉优化 2：用留白代替死板的线框，文字换成高级灰】
+        javax.swing.border.TitledBorder titledBorder = BorderFactory.createTitledBorder(
+                BorderFactory.createEmptyBorder(20, 20, 20, 20),
+                "窗口排队监控"
+        );
+        titledBorder.setTitleColor(frontend.ColorTheme.TEXT_SECONDARY);
+        this.setBorder(titledBorder);
+
         updateWindowCount(initialWindowCount);
     }
 
-    // =========================================
-    // 【新增核心接口】：响应配置弹窗，擦除重画所有窗口
-    // =========================================
     public void updateWindowCount(int windowCount) {
         this.removeAll();
 
         queueBars = new JProgressBar[windowCount];
 
-        // 1. 核心列表面板（负责把所有窗口排成一列）
         JPanel listPanel = new JPanel(new GridLayout(windowCount, 1, 0, 15));
         listPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        // 极其重要：让里面的面板透明，露出底下的高级暗色
+        listPanel.setOpaque(false);
 
         for (int i = 0; i < windowCount; i++) {
             JPanel singleWindowPanel = new JPanel(new BorderLayout(10, 0));
-            // 锁定单个窗口的完美高度（比如 35 像素），防止被拉伸变形
             singleWindowPanel.setPreferredSize(new Dimension(0, 35));
+            singleWindowPanel.setOpaque(false); // 背景透明
 
             JLabel nameLabel = new JLabel("窗口 " + (i + 1));
             nameLabel.setPreferredSize(new Dimension(60, 30));
+            // 文字变成主标题亮色
+            nameLabel.setForeground(frontend.ColorTheme.TEXT_PRIMARY);
             singleWindowPanel.add(nameLabel, BorderLayout.WEST);
 
             JProgressBar progressBar = new JProgressBar(0, 30);
             progressBar.setValue(0);
             progressBar.setStringPainted(true);
             progressBar.setString("排队中: 0 人");
-            progressBar.setForeground(new Color(52, 199, 89));
+
+            // 【视觉优化 3：初始颜色换成深邃调色盘的霓虹青色】
+            progressBar.setForeground(frontend.ColorTheme.ACCENT_CYAN);
+
+            // 给进度条也加上圆角魔法 (结合 FlatLaf 引擎食用极佳)
+            progressBar.putClientProperty("FlatLaf.style", "arc: 15");
 
             queueBars[i] = progressBar;
             singleWindowPanel.add(progressBar, BorderLayout.CENTER);
@@ -50,47 +62,37 @@ public class QueueAreaPanel extends JPanel {
             listPanel.add(singleWindowPanel);
         }
 
-        // =========================================
-        // 【防变形魔法】：用一个空的 BorderLayout 把列表顶在最上方 (NORTH)
-        // 这样即使只有 2 个窗口，它们也不会被撑满全屏
-        // =========================================
         JPanel wrapperPanel = new JPanel(new BorderLayout());
+        wrapperPanel.setOpaque(false); // 包装器透明
         wrapperPanel.add(listPanel, BorderLayout.NORTH);
 
-        // =========================================
-        // 【滚动条魔法】：给包装好的面板套上滚动视口
-        // =========================================
         JScrollPane scrollPane = new JScrollPane(wrapperPanel);
-        // 只在需要时显示垂直滚动条
         scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
-        // 永远不显示难看的水平滚动条
         scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        // 去掉默认的边框，让它和原来的 UI 完美融合
-        scrollPane.setBorder(null);
+        scrollPane.setBorder(null); // 去掉滚动条的边框
+        scrollPane.setOpaque(false);
+        // 【视觉优化 4 (驱逐白色刺客)：视口也必须设置透明！】
+        scrollPane.getViewport().setOpaque(false);
 
-        // 2. 把带有滚动条的画框加进主面板
         this.add(scrollPane, BorderLayout.CENTER);
 
         this.revalidate();
         this.repaint();
     }
 
-    // =========================================
-    // 【老核心接口】：未来给后端调用的方法，更新进度条数值
-    // =========================================
     public void updateQueueLength(int windowIndex, int currentLength) {
         if (windowIndex >= 0 && windowIndex < queueBars.length) {
             JProgressBar bar = queueBars[windowIndex];
             bar.setValue(currentLength);
             bar.setString("排队中: " + currentLength + " 人");
 
-            // 动态变色逻辑：人少绿色，中等橙色，快满了红色
+            // 【视觉优化 5：动态切换为赛博霓虹色】
             if (currentLength < 10) {
-                bar.setForeground(new Color(52, 199, 89)); // 绿
+                bar.setForeground(frontend.ColorTheme.ACCENT_CYAN);   // 安全：霓虹青
             } else if (currentLength < 20) {
-                bar.setForeground(new Color(255, 149, 0)); // 橙
+                bar.setForeground(frontend.ColorTheme.ACCENT_YELLOW); // 警告：暖黄
             } else {
-                bar.setForeground(new Color(255, 59, 48)); // 红
+                bar.setForeground(frontend.ColorTheme.ACCENT_RED);    // 拥挤：樱桃红
             }
         }
     }
