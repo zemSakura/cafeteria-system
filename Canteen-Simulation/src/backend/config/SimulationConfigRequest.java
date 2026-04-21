@@ -1,66 +1,38 @@
 package backend.config;
 
 /**
- * 前端 -> 后端 的统一配置请求对象
+ * Frontend-to-backend configuration request.
  *
- * 设计目的：
- * 1. 前端不要再零散地修改 CanteenConfig 里的静态变量
- * 2. 所有参数统一封装成一个对象传进来
- * 3. 后端只需要调用 CanteenConfig.updateAllConfigs(request)
+ * Existing UI fields remain supported. New arrival fields allow the frontend to
+ * pass totalPopulation, simulationMode and mealPeriod without touching the
+ * arrival module directly.
  */
 public class SimulationConfigRequest {
 
-    /** 桌位数量 */
     private int tableCount;
-
-    /** 窗口数量 */
     private int windowCount;
-
-    /** 营业时长 */
     private int openDuration;
-
-    /** 快照间隔 */
     private int snapshotInterval;
-
-    /** 随机种子 */
     private long randomSeed;
 
-    /** 就餐时长均值 */
     private double diningTimeMean;
-
-    /** 就餐时长标准差 */
     private double diningTimeStd;
-
-    /** 最短就餐时长 */
     private int minDiningTime;
 
-    /** 最小忍耐度 */
     private int patienceMin;
-
-    /** 最大忍耐度 */
     private int patienceMax;
 
-    /** 单人到达概率 */
     private double probSolo;
-
-    /** 双人到达概率 */
     private double probDuo;
-
-    /** 四人组到达概率 */
     private double probTeam;
 
-    /**
-     * 可选字段：
-     * 如果前端不仅要传窗口数量，还要精细控制每个窗口的参数，
-     * 可以直接传这两个数组
-     */
+    private int totalPopulation;
+    private String simulationMode;
+    private String mealPeriod;
+
     private int[] windowDistances;
     private int[] windowAvgServeTime;
 
-    /**
-     * 无参构造：
-     * 默认先把所有值初始化为系统默认配置
-     */
     public SimulationConfigRequest() {
         this.tableCount = CanteenConfig.DEFAULT_TOTAL_TABLES;
         this.windowCount = CanteenConfig.DEFAULT_WINDOW_DISTANCES.length;
@@ -78,6 +50,10 @@ public class SimulationConfigRequest {
         this.probSolo = CanteenConfig.DEFAULT_PROB_SOLO;
         this.probDuo = CanteenConfig.DEFAULT_PROB_DUO;
         this.probTeam = CanteenConfig.DEFAULT_PROB_TEAM;
+
+        this.totalPopulation = CanteenConfig.DEFAULT_TOTAL_POPULATION;
+        this.simulationMode = CanteenConfig.DEFAULT_SIMULATION_MODE.getCode();
+        this.mealPeriod = CanteenConfig.DEFAULT_MEAL_PERIOD.getCode();
     }
 
     public int getTableCount() {
@@ -182,6 +158,30 @@ public class SimulationConfigRequest {
 
     public void setProbTeam(double probTeam) {
         this.probTeam = probTeam;
+    }
+
+    public int getTotalPopulation() {
+        return totalPopulation;
+    }
+
+    public void setTotalPopulation(int totalPopulation) {
+        this.totalPopulation = totalPopulation;
+    }
+
+    public String getSimulationMode() {
+        return simulationMode;
+    }
+
+    public void setSimulationMode(String simulationMode) {
+        this.simulationMode = simulationMode;
+    }
+
+    public String getMealPeriod() {
+        return mealPeriod;
+    }
+
+    public void setMealPeriod(String mealPeriod) {
+        this.mealPeriod = mealPeriod;
     }
 
     public int[] getWindowDistances() {

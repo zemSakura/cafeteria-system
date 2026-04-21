@@ -1,152 +1,123 @@
 package backend.config;
 
+import backend.model.MealPeriod;
+import backend.model.SimulationMode;
+
 import java.util.Arrays;
 
 /**
- * 食堂仿真系统全局配置类
+ * Global runtime configuration for the cafeteria simulation.
  *
- * 设计说明：
- * 1. 以前很多配置是 public static final，前端无法动态修改
- * 2. 现在改成“默认值常量 + 运行时可变配置”两层结构
- * 3. 前端点击“开始”后，可以通过 updateAllConfigs(...) 一次性注入参数
- * 4. 支持动态窗口数量
- * 5. 支持恢复默认配置
+ * The current project uses static runtime configuration. This class keeps that
+ * style, but centralizes all arrival initialization parameters so the arrival
+ * model can be adjusted without scattering magic numbers through modules.
  */
 public class CanteenConfig {
 
-    /**
-     * 私有构造，禁止外部 new
-     */
     private CanteenConfig() {
     }
 
-    /**
-     * 时间单位说明：CanteenConfig
-     * 当前统一约定：1 个仿真时间单位 = 1 分钟
-     * 注意：这里只是“仿真单位”，不是系统真实秒
-     */
-    public static final String TIME_UNIT_DESCRIPTION = "1 个仿真时间单位 = 1 分钟";
+    public static final String TIME_UNIT_DESCRIPTION = "1 simulation time unit = 1 minute";
 
     // =========================================================
-    // 一、默认值常量（永远不改，只作为“恢复默认配置”的依据）
+    // Default values
     // =========================================================
 
-    /** 默认桌位总数 */
     public static final int DEFAULT_TOTAL_TABLES = 150;
-
-    /** 默认营业时长：120 个仿真时间单位 */
     public static final int DEFAULT_OPEN_DURATION = 120;
-
-    /** 默认快照间隔：每 5 个仿真单位导出一次 */
     public static final int DEFAULT_SNAPSHOT_INTERVAL = 5;
-
-    /** 默认随机种子：便于复现实验 */
     public static final long DEFAULT_RANDOM_SEED = 20260324L;
 
-    /** 默认窗口距离数组 */
-    public static int[] DEFAULT_WINDOW_DISTANCES = {10, 15, 20, 25, 30};
-
-    /** 默认窗口平均服务时长数组 */
+    public static final int[] DEFAULT_WINDOW_DISTANCES = {10, 15, 20, 25, 30};
     public static final int[] DEFAULT_WINDOW_AVG_SERVE_TIME = {1, 2, 1, 2, 2};
 
-    /** 默认就餐时长均值 */
     public static final double DEFAULT_DINING_TIME_MEAN = 15.0;
-
-    /** 默认就餐时长标准差 */
     public static final double DEFAULT_DINING_TIME_STD = 3.0;
-
-    /** 默认最短就餐时长 */
     public static final int DEFAULT_MIN_DINING_TIME = 5;
 
-    /** 默认最小忍耐度 */
     public static final int DEFAULT_PATIENCE_MIN = 5;
-
-    /** 默认最大忍耐度 */
     public static final int DEFAULT_PATIENCE_MAX = 15;
 
-    /** 默认单人到达概率 */
     public static final double DEFAULT_PROB_SOLO = 0.7;
-
-    /** 默认双人到达概率 */
     public static final double DEFAULT_PROB_DUO = 0.2;
-
-    /** 默认四人组队到达概率 */
     public static final double DEFAULT_PROB_TEAM = 0.1;
 
+    public static final int DEFAULT_TOTAL_POPULATION = 1000;
+    public static final SimulationMode DEFAULT_SIMULATION_MODE = SimulationMode.SINGLE_PERIOD;
+    public static final MealPeriod DEFAULT_MEAL_PERIOD = MealPeriod.LUNCH;
+
+    public static final double DEFAULT_BREAKFAST_BASE_RATE = 0.22;
+    public static final double DEFAULT_EARLY_CLASS_RATIO = 0.35;
+    public static final double DEFAULT_BREAKFAST_SKIP_RATE = 0.35;
+    public static final double DEFAULT_EARLY_CLASS_BREAKFAST_BOOST = 0.18;
+
+    public static final double DEFAULT_LUNCH_BASE_RATE = 0.72;
+    public static final double DEFAULT_TAKEOUT_RATE_AT_LUNCH = 0.12;
+    public static final double[] DEFAULT_LUNCH_BATCH_WEIGHTS = {0.55, 0.45};
+    public static final int[] DEFAULT_LUNCH_RELEASE_TIMES = {11 * 60 + 50, 12 * 60 + 10};
+    public static final int[] DEFAULT_LUNCH_PEAK_DELAY_MEANS = {8, 10};
+
+    public static final double DEFAULT_DINNER_BASE_RATE = 0.52;
+    public static final double DEFAULT_EVENING_CLASS_RATIO = 0.25;
+    public static final double DEFAULT_DINNER_SKIP_OR_OFF_CAMPUS_RATE = 0.18;
+    public static final int DEFAULT_DINNER_UNIFIED_RELEASE_TIME = 17 * 60 + 40;
+    public static final int DEFAULT_DINNER_PEAK_DELAY_MEAN = 12;
+
+    public static final double DEFAULT_BACKGROUND_FLOW_RATIO = 0.18;
 
     // =========================================================
-    // 二、运行时配置（前端/引擎可以动态修改）
+    // Runtime values
     // =========================================================
 
-    /** 当前桌位总数 */
     public static int TOTAL_TABLES = DEFAULT_TOTAL_TABLES;
-
-    /** 当前营业总时长 */
     public static int OPEN_DURATION = DEFAULT_OPEN_DURATION;
-
-    /** 当前快照间隔 */
     public static int SNAPSHOT_INTERVAL = DEFAULT_SNAPSHOT_INTERVAL;
-
-    /** 当前随机种子 */
     public static long RANDOM_SEED = DEFAULT_RANDOM_SEED;
 
-    /** 当前窗口距离数组 */
     public static int[] WINDOW_DISTANCES = DEFAULT_WINDOW_DISTANCES.clone();
-
-    /** 当前窗口平均服务时长数组 */
     public static int[] WINDOW_AVG_SERVE_TIME = DEFAULT_WINDOW_AVG_SERVE_TIME.clone();
 
-    /** 当前就餐时长均值 */
     public static double DINING_TIME_MEAN = DEFAULT_DINING_TIME_MEAN;
-
-    /** 当前就餐时长标准差 */
     public static double DINING_TIME_STD = DEFAULT_DINING_TIME_STD;
-
-    /** 当前最短就餐时长 */
     public static int MIN_DINING_TIME = DEFAULT_MIN_DINING_TIME;
 
-    /** 当前最小忍耐度 */
     public static int PATIENCE_MIN = DEFAULT_PATIENCE_MIN;
-
-    /** 当前最大忍耐度 */
     public static int PATIENCE_MAX = DEFAULT_PATIENCE_MAX;
 
-    /** 当前单人到达概率 */
     public static double PROB_SOLO = DEFAULT_PROB_SOLO;
-
-    /** 当前双人到达概率 */
     public static double PROB_DUO = DEFAULT_PROB_DUO;
-
-    /** 当前四人组队到达概率 */
     public static double PROB_TEAM = DEFAULT_PROB_TEAM;
 
+    public static int TOTAL_POPULATION = DEFAULT_TOTAL_POPULATION;
+    public static SimulationMode SIMULATION_MODE = DEFAULT_SIMULATION_MODE;
+    public static MealPeriod MEAL_PERIOD = DEFAULT_MEAL_PERIOD;
 
-    /**
-     * 获取当前窗口数量
-     * 窗口数量由窗口数组长度决定
-     *
-     * @return 当前窗口数
-     */
+    public static double BREAKFAST_BASE_RATE = DEFAULT_BREAKFAST_BASE_RATE;
+    public static double EARLY_CLASS_RATIO = DEFAULT_EARLY_CLASS_RATIO;
+    public static double BREAKFAST_SKIP_RATE = DEFAULT_BREAKFAST_SKIP_RATE;
+    public static double EARLY_CLASS_BREAKFAST_BOOST = DEFAULT_EARLY_CLASS_BREAKFAST_BOOST;
+
+    public static double LUNCH_BASE_RATE = DEFAULT_LUNCH_BASE_RATE;
+    public static double TAKEOUT_RATE_AT_LUNCH = DEFAULT_TAKEOUT_RATE_AT_LUNCH;
+    public static double[] LUNCH_BATCH_WEIGHTS = DEFAULT_LUNCH_BATCH_WEIGHTS.clone();
+    public static int[] LUNCH_RELEASE_TIMES = DEFAULT_LUNCH_RELEASE_TIMES.clone();
+    public static int[] LUNCH_PEAK_DELAY_MEANS = DEFAULT_LUNCH_PEAK_DELAY_MEANS.clone();
+
+    public static double DINNER_BASE_RATE = DEFAULT_DINNER_BASE_RATE;
+    public static double EVENING_CLASS_RATIO = DEFAULT_EVENING_CLASS_RATIO;
+    public static double DINNER_SKIP_OR_OFF_CAMPUS_RATE = DEFAULT_DINNER_SKIP_OR_OFF_CAMPUS_RATE;
+    public static int DINNER_UNIFIED_RELEASE_TIME = DEFAULT_DINNER_UNIFIED_RELEASE_TIME;
+    public static int DINNER_PEAK_DELAY_MEAN = DEFAULT_DINNER_PEAK_DELAY_MEAN;
+
+    public static double BACKGROUND_FLOW_RATIO = DEFAULT_BACKGROUND_FLOW_RATIO;
+
     public static int getWindowCount() {
         return WINDOW_DISTANCES.length;
     }
 
-    /**
-     * 动态初始化窗口配置
-     *
-     * 使用场景：
-     * - 前端只传一个 windowCount
-     * - 后端根据这个数量自动生成默认的窗口距离和服务时长数组
-     *
-     * 默认规则：
-     * - 距离：10, 15, 20, 25...
-     * - 平均服务时间：统一先给 2
-     *
-     * @param windowCount 窗口数量
-     */
     public static synchronized void initWindowsConfig(int windowCount) {
         if (windowCount <= 0) {
-            throw new IllegalArgumentException("窗口数量必须大于 0");
+            throw new IllegalArgumentException("windowCount must be greater than 0");
         }
 
         WINDOW_DISTANCES = new int[windowCount];
@@ -158,51 +129,28 @@ public class CanteenConfig {
         }
     }
 
-    /**
-     * 允许前端直接传完整窗口数组
-     *
-     * 使用场景：
-     * - 前端不只想控制窗口数
-     * - 还想自定义每个窗口的距离和服务时长
-     *
-     * @param distances  窗口距离数组
-     * @param serveTimes 窗口服务时长数组
-     */
     public static synchronized void updateWindowConfigs(int[] distances, int[] serveTimes) {
         if (distances == null || serveTimes == null) {
-            throw new IllegalArgumentException("窗口配置数组不能为 null");
+            throw new IllegalArgumentException("window config arrays cannot be null");
         }
-
         if (distances.length == 0 || serveTimes.length == 0) {
-            throw new IllegalArgumentException("窗口配置数组长度不能为 0");
+            throw new IllegalArgumentException("window config arrays cannot be empty");
         }
-
         if (distances.length != serveTimes.length) {
-            throw new IllegalArgumentException("窗口距离数组和服务时长数组长度必须一致");
+            throw new IllegalArgumentException("window distance and serve time arrays must have the same length");
         }
 
-        // clone 防止外部数组引用直接污染内部配置
         WINDOW_DISTANCES = distances.clone();
         WINDOW_AVG_SERVE_TIME = serveTimes.clone();
 
         validate();
     }
 
-    /**
-     * 统一参数注入入口
-     *
-     * 这是前端最推荐调用的方法：
-     * - 把所有输入框里的值装进 SimulationConfigRequest
-     * - 然后一次性传给这里
-     *
-     * @param request 前端传来的完整配置请求
-     */
     public static synchronized void updateAllConfigs(SimulationConfigRequest request) {
         if (request == null) {
-            throw new IllegalArgumentException("配置请求不能为空");
+            throw new IllegalArgumentException("config request cannot be null");
         }
 
-        // 1. 更新非窗口配置
         TOTAL_TABLES = request.getTableCount();
         OPEN_DURATION = request.getOpenDuration();
         SNAPSHOT_INTERVAL = request.getSnapshotInterval();
@@ -219,26 +167,19 @@ public class CanteenConfig {
         PROB_DUO = request.getProbDuo();
         PROB_TEAM = request.getProbTeam();
 
-        // 2. 更新窗口配置
-        // 如果前端传了完整数组，就按数组来
-        // 否则只按 windowCount 动态初始化
+        TOTAL_POPULATION = request.getTotalPopulation();
+        SIMULATION_MODE = SimulationMode.fromCode(request.getSimulationMode());
+        MEAL_PERIOD = MealPeriod.fromCode(request.getMealPeriod());
+
         if (request.getWindowDistances() != null && request.getWindowAvgServeTime() != null) {
             updateWindowConfigs(request.getWindowDistances(), request.getWindowAvgServeTime());
         } else {
             initWindowsConfig(request.getWindowCount());
         }
 
-        // 3. 最终统一校验
         validate();
     }
 
-    /**
-     * 恢复到默认配置
-     *
-     * 使用场景：
-     * - 前端点“恢复默认设置”
-     * - 或者测试时想把配置重置回最初状态
-     */
     public static synchronized void resetToDefaults() {
         TOTAL_TABLES = DEFAULT_TOTAL_TABLES;
         OPEN_DURATION = DEFAULT_OPEN_DURATION;
@@ -259,70 +200,113 @@ public class CanteenConfig {
         PROB_DUO = DEFAULT_PROB_DUO;
         PROB_TEAM = DEFAULT_PROB_TEAM;
 
+        TOTAL_POPULATION = DEFAULT_TOTAL_POPULATION;
+        SIMULATION_MODE = DEFAULT_SIMULATION_MODE;
+        MEAL_PERIOD = DEFAULT_MEAL_PERIOD;
+
+        BREAKFAST_BASE_RATE = DEFAULT_BREAKFAST_BASE_RATE;
+        EARLY_CLASS_RATIO = DEFAULT_EARLY_CLASS_RATIO;
+        BREAKFAST_SKIP_RATE = DEFAULT_BREAKFAST_SKIP_RATE;
+        EARLY_CLASS_BREAKFAST_BOOST = DEFAULT_EARLY_CLASS_BREAKFAST_BOOST;
+
+        LUNCH_BASE_RATE = DEFAULT_LUNCH_BASE_RATE;
+        TAKEOUT_RATE_AT_LUNCH = DEFAULT_TAKEOUT_RATE_AT_LUNCH;
+        LUNCH_BATCH_WEIGHTS = DEFAULT_LUNCH_BATCH_WEIGHTS.clone();
+        LUNCH_RELEASE_TIMES = DEFAULT_LUNCH_RELEASE_TIMES.clone();
+        LUNCH_PEAK_DELAY_MEANS = DEFAULT_LUNCH_PEAK_DELAY_MEANS.clone();
+
+        DINNER_BASE_RATE = DEFAULT_DINNER_BASE_RATE;
+        EVENING_CLASS_RATIO = DEFAULT_EVENING_CLASS_RATIO;
+        DINNER_SKIP_OR_OFF_CAMPUS_RATE = DEFAULT_DINNER_SKIP_OR_OFF_CAMPUS_RATE;
+        DINNER_UNIFIED_RELEASE_TIME = DEFAULT_DINNER_UNIFIED_RELEASE_TIME;
+        DINNER_PEAK_DELAY_MEAN = DEFAULT_DINNER_PEAK_DELAY_MEAN;
+
+        BACKGROUND_FLOW_RATIO = DEFAULT_BACKGROUND_FLOW_RATIO;
+
         validate();
     }
 
-    /**
-     * 配置合法性校验
-     *
-     * 任何开始仿真前，都建议先调用一次
-     */
     public static synchronized void validate() {
         if (TOTAL_TABLES <= 0) {
-            throw new IllegalArgumentException("桌位数量必须大于 0");
+            throw new IllegalArgumentException("table count must be greater than 0");
         }
-
         if (WINDOW_DISTANCES == null || WINDOW_AVG_SERVE_TIME == null) {
-            throw new IllegalArgumentException("窗口配置数组不能为空");
+            throw new IllegalArgumentException("window config arrays cannot be null");
         }
-
         if (WINDOW_DISTANCES.length != WINDOW_AVG_SERVE_TIME.length) {
-            throw new IllegalArgumentException("窗口配置数组长度不一致");
+            throw new IllegalArgumentException("window config arrays must have the same length");
         }
-
         if (WINDOW_DISTANCES.length == 0) {
-            throw new IllegalArgumentException("窗口数不能为 0");
+            throw new IllegalArgumentException("window count cannot be 0");
         }
-
         for (int distance : WINDOW_DISTANCES) {
             if (distance < 0) {
-                throw new IllegalArgumentException("窗口距离不能为负数");
+                throw new IllegalArgumentException("window distance cannot be negative");
             }
         }
-
         for (int serveTime : WINDOW_AVG_SERVE_TIME) {
             if (serveTime <= 0) {
-                throw new IllegalArgumentException("窗口服务时间必须大于 0");
+                throw new IllegalArgumentException("window serve time must be greater than 0");
             }
         }
-
         if (OPEN_DURATION <= 0) {
-            throw new IllegalArgumentException("营业时长必须大于 0");
+            throw new IllegalArgumentException("open duration must be greater than 0");
         }
-
         if (SNAPSHOT_INTERVAL <= 0) {
-            throw new IllegalArgumentException("快照间隔必须大于 0");
+            throw new IllegalArgumentException("snapshot interval must be greater than 0");
         }
-
         if (PATIENCE_MIN < 0 || PATIENCE_MAX < 0 || PATIENCE_MIN > PATIENCE_MAX) {
-            throw new IllegalArgumentException("忍耐度范围非法");
+            throw new IllegalArgumentException("invalid patience range");
         }
-
         if (DINING_TIME_MEAN <= 0 || DINING_TIME_STD < 0 || MIN_DINING_TIME <= 0) {
-            throw new IllegalArgumentException("就餐时长参数非法");
+            throw new IllegalArgumentException("invalid dining time config");
         }
 
-        double sum = PROB_SOLO + PROB_DUO + PROB_TEAM;
-        if (Math.abs(sum - 1.0) > 1e-9) {
-            throw new IllegalArgumentException("组队概率之和必须为 1，当前为: " + sum);
+        double groupProbabilitySum = PROB_SOLO + PROB_DUO + PROB_TEAM;
+        if (Math.abs(groupProbabilitySum - 1.0) > 1e-9) {
+            throw new IllegalArgumentException("group probabilities must sum to 1.0, current: " + groupProbabilitySum);
+        }
+
+        if (TOTAL_POPULATION <= 0) {
+            throw new IllegalArgumentException("totalPopulation must be greater than 0");
+        }
+        validateRate(BREAKFAST_BASE_RATE, "breakfastBaseRate");
+        validateRate(EARLY_CLASS_RATIO, "earlyClassRatio");
+        validateRate(BREAKFAST_SKIP_RATE, "breakfastSkipRate");
+        validateRate(EARLY_CLASS_BREAKFAST_BOOST, "earlyClassBreakfastBoost");
+        validateRate(LUNCH_BASE_RATE, "lunchBaseRate");
+        validateRate(TAKEOUT_RATE_AT_LUNCH, "takeoutRateAtLunch");
+        validateRate(DINNER_BASE_RATE, "dinnerBaseRate");
+        validateRate(EVENING_CLASS_RATIO, "eveningClassRatio");
+        validateRate(DINNER_SKIP_OR_OFF_CAMPUS_RATE, "dinnerSkipOrOffCampusRate");
+        validateRate(BACKGROUND_FLOW_RATIO, "backgroundFlowRatio");
+
+        if (LUNCH_BATCH_WEIGHTS == null || LUNCH_RELEASE_TIMES == null || LUNCH_PEAK_DELAY_MEANS == null) {
+            throw new IllegalArgumentException("lunch batch config cannot be null");
+        }
+        if (LUNCH_BATCH_WEIGHTS.length == 0
+                || LUNCH_BATCH_WEIGHTS.length != LUNCH_RELEASE_TIMES.length
+                || LUNCH_BATCH_WEIGHTS.length != LUNCH_PEAK_DELAY_MEANS.length) {
+            throw new IllegalArgumentException("lunch batch config arrays must be non-empty and have the same length");
+        }
+        double batchWeightSum = 0.0;
+        for (double weight : LUNCH_BATCH_WEIGHTS) {
+            if (weight < 0) {
+                throw new IllegalArgumentException("lunch batch weights cannot be negative");
+            }
+            batchWeightSum += weight;
+        }
+        if (batchWeightSum <= 0.0) {
+            throw new IllegalArgumentException("lunch batch weights must have a positive sum");
         }
     }
 
-    /**
-     * 打印当前配置，便于调试
-     *
-     * @return 当前配置字符串
-     */
+    private static void validateRate(double value, String name) {
+        if (value < 0.0 || value > 1.0) {
+            throw new IllegalArgumentException(name + " must be between 0 and 1");
+        }
+    }
+
     public static synchronized String dumpConfig() {
         return "CanteenConfig{" +
                 "TOTAL_TABLES=" + TOTAL_TABLES +
@@ -339,6 +323,9 @@ public class CanteenConfig {
                 ", PROB_SOLO=" + PROB_SOLO +
                 ", PROB_DUO=" + PROB_DUO +
                 ", PROB_TEAM=" + PROB_TEAM +
+                ", TOTAL_POPULATION=" + TOTAL_POPULATION +
+                ", SIMULATION_MODE=" + SIMULATION_MODE +
+                ", MEAL_PERIOD=" + MEAL_PERIOD +
                 '}';
     }
 }

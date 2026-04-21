@@ -1,8 +1,10 @@
 package backend.model;
 
 /**
- * 仿真事件
- * 后续如果你们要接统一事件驱动引擎，可以直接使用
+ * Simulation event.
+ *
+ * Arrival events now also carry mealPeriod, crowdType and arrivalSource so the
+ * same event list can be used by queueing modules and frontend visualization.
  */
 public class SimulationEvent implements Comparable<SimulationEvent> {
 
@@ -13,6 +15,9 @@ public class SimulationEvent implements Comparable<SimulationEvent> {
     private int windowId;
     private int tableId;
     private int priority;
+    private MealPeriod mealPeriod;
+    private CrowdType crowdType;
+    private String arrivalSource;
 
     public SimulationEvent(long eventTime,
                            EventType eventType,
@@ -21,6 +26,20 @@ public class SimulationEvent implements Comparable<SimulationEvent> {
                            int windowId,
                            int tableId,
                            int priority) {
+        this(eventTime, eventType, groupId, studentId, windowId, tableId, priority,
+                null, null, "");
+    }
+
+    public SimulationEvent(long eventTime,
+                           EventType eventType,
+                           int groupId,
+                           int studentId,
+                           int windowId,
+                           int tableId,
+                           int priority,
+                           MealPeriod mealPeriod,
+                           CrowdType crowdType,
+                           String arrivalSource) {
         this.eventTime = eventTime;
         this.eventType = eventType;
         this.groupId = groupId;
@@ -28,6 +47,9 @@ public class SimulationEvent implements Comparable<SimulationEvent> {
         this.windowId = windowId;
         this.tableId = tableId;
         this.priority = priority;
+        this.mealPeriod = mealPeriod;
+        this.crowdType = crowdType;
+        this.arrivalSource = arrivalSource == null ? "" : arrivalSource;
     }
 
     public long getEventTime() { return eventTime; }
@@ -37,6 +59,9 @@ public class SimulationEvent implements Comparable<SimulationEvent> {
     public int getWindowId() { return windowId; }
     public int getTableId() { return tableId; }
     public int getPriority() { return priority; }
+    public MealPeriod getMealPeriod() { return mealPeriod; }
+    public CrowdType getCrowdType() { return crowdType; }
+    public String getArrivalSource() { return arrivalSource; }
 
     @Override
     public int compareTo(SimulationEvent other) {
@@ -56,6 +81,9 @@ public class SimulationEvent implements Comparable<SimulationEvent> {
                 ", windowId=" + windowId +
                 ", tableId=" + tableId +
                 ", priority=" + priority +
+                ", mealPeriod=" + mealPeriod +
+                ", crowdType=" + crowdType +
+                ", arrivalSource='" + arrivalSource + '\'' +
                 '}';
     }
 }

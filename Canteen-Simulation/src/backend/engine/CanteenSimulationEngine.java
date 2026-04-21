@@ -2,6 +2,7 @@ package backend.engine;
 
 import backend.config.CanteenConfig;
 import backend.config.SimulationConfigRequest;
+import backend.model.ArrivalGenerationResult;
 import backend.model.SimulationEvent;
 import backend.model.StateSnapshot;
 import backend.model.StatisticsResult;
@@ -77,6 +78,8 @@ public class CanteenSimulationEngine {
      */
     private StatisticsResult statisticsResult;
 
+    private ArrivalGenerationResult arrivalGenerationResult;
+
     /**
      * 引擎运行标记
      */
@@ -93,6 +96,7 @@ public class CanteenSimulationEngine {
         this.eventQueue = new ArrayList<>();
         this.snapshots = new ArrayList<>();
         this.statisticsResult = new StatisticsResult();
+        this.arrivalGenerationResult = null;
         this.arrivalModule = new ArrivalModule(arrivalQueue, CanteenConfig.RANDOM_SEED);
         this.running = false;
     }
@@ -129,8 +133,13 @@ public class CanteenSimulationEngine {
 
         // 初始化运行态
         windowStates = arrivalModule.initWindowStates();
-        students = arrivalModule.generateStudents();
-        eventQueue = arrivalModule.generateArrivalEvents();
+        arrivalGenerationResult = arrivalModule.generateArrivalPlan(
+                CanteenConfig.TOTAL_POPULATION,
+                CanteenConfig.SIMULATION_MODE,
+                CanteenConfig.MEAL_PERIOD
+        );
+        students = new ArrayList<>(arrivalGenerationResult.getStudents());
+        eventQueue = new ArrayList<>(arrivalGenerationResult.getArrivalEvents());
         tables = initTables();
 
         running = true;
@@ -183,6 +192,7 @@ public class CanteenSimulationEngine {
 
         // 统计结果重置
         statisticsResult = new StatisticsResult();
+        arrivalGenerationResult = null;
     }
 
     /**
@@ -264,6 +274,10 @@ public class CanteenSimulationEngine {
      */
     public synchronized StatisticsResult getStatisticsResult() {
         return statisticsResult;
+    }
+
+    public synchronized ArrivalGenerationResult getArrivalGenerationResult() {
+        return arrivalGenerationResult;
     }
 
     /**

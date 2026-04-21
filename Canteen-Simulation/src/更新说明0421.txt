@@ -1,0 +1,345 @@
+人员到来初始化模块后端更新说明（2026-04-21）
+
+一、本次更新范围
+
+本次只修改了 backend 目录下的代码，没有修改 frontend 目录。
+
+主要改造目标：
+1. 将原来的简单到达生成逻辑升级为“总人数 -> 三餐人数推导 -> 到达事件生成”的两层结构。
+2. 支持单时段模拟和全天模拟。
+3. 支持早餐、午餐、晚餐三个固定时段。
+4. 到达模型从单一到达过程改为“背景散客流 + 多个高斯峰值流”。
+5. 为前端可视化准备峰值参数和每分钟到达强度数据。
+6. 到达事件中增加餐段、人群类型、到达来源信息，便于后续排队模块使用。
+
+
+二、修改的 backend 文件
+
+1. backend/config/CanteenConfig.java
+
+新增运行时配置：
+- TOTAL_POPULATION
+- SIMULATION_MODE
+- MEAL_PERIOD
+
+新增三餐人数推导相关配置：
+- BREAKFAST_BASE_RATE
+- EARLY_CLASS_RATIO
+- BREAKFAST_SKIP_RATE
+- EARLY_CLASS_BREAKFAST_BOOST
+- LUNCH_BASE_RATE
+- TAKEOUT_RATE_AT_LUNCH
+- LUNCH_BATCH_WEIGHTS
+- LUNCH_RELEASE_TIMES
+- LUNCH_PEAK_DELAY_MEANS
+- DINNER_BASE_RATE
+- EVENING_CLASS_RATIO
+- DINNER_SKIP_OR_OFF_CAMPUS_RATE
+- DINNER_UNIFIED_RELEASE_TIME
+- DINNER_PEAK_DELAY_MEAN
+- BACKGROUND_FLOW_RATIO
+
+默认餐段时间：
+- 早餐：06:30 - 09:00
+- 午餐：11:00 - 13:30
+- 晚餐：17:00 - 19:30
+
+
+2. backend/config/SimulationConfigRequest.java
+
+新增前端可传字段：
+- totalPopulation
+- simulationMode
+- mealPeriod
+
+其中：
+- totalPopulation：学校总人数
+- simulationMode：模拟模式
+- mealPeriod：单时段模式下要模拟的餐段
+
+
+3. backend/module/ArrivalModule.java
+
+这是本次核心改造文件。
+
+新增能力：
+- deriveMealPopulations(int totalPopulation)
+  根据学校总人数自动推导早餐、午餐、晚餐人数。
+
+- generateArrivalPlan(int totalPopulation, SimulationMode simulationMode, MealPeriod mealPeriod)
+  生成完整到达初始化结果。
+
+逻辑特点：
+- 早餐人数由早八比例、早餐跳过率、早课早餐提升率等参数推导。
+- 午餐人数最大，并且午餐是唯一使用“分批次下课”模型的时段。
+- 晚餐人数少于午餐，使用统一晚课下课时间形成峰值，不做午餐那种多批次模型。
+- 每个餐段都有背景散客流。
+- 支持 FAST、NORMAL、SLOW 三类人群，影响到达延迟和耐心参数。
+- 单时段模式只生成目标餐段。
+- 全天模式生成三餐事件，并按时间排序合并。
+
+
+4. backend/model/Student.java
+
+新增字段：
+- mealPeriod
+- crowdType
+- arrivalSource
+
+作用：
+- mealPeriod：标记学生属于早餐、午餐还是晚餐。
+- crowdType：标记 FAST、NORMAL、SLOW。
+- arrivalSource：标记该学生来自背景流、午餐批次峰、晚餐统一下课峰等来源。
+
+
+5. backend/model/SimulationEvent.java
+
+新增字段：
+- mealPeriod
+- crowdType
+- arrivalSource
+
+作用：
+- 到达事件列表可以直接被后续排队模块使用。
+- 前端或统计模块也可以根据餐段、来源、人群类型做可视化和分析。
+
+
+6. backend/engine/CanteenSimulationEngine.java
+
+新增字段和 getter：
+- ArrivalGenerationResult arrivalGenerationResult
+- getArrivalGenerationResult()
+
+作用：
+- 后端引擎启动时保存完整到达初始化结果。
+- 后续前端或统计模块可以读取每个餐段的统计和可视化数据。
+
+
+三、新增的 backend 文件
+
+1. backend/model/MealPeriod.java
+
+定义餐段：
+- BREAKFAST
+- LUNCH
+- DINNER
+
+每个餐段包含：
+- code
+- displayName
+- startMinute
+- endMinute
+
+
+2. backend/model/SimulationMode.java
+
+定义模拟模式：
+- SINGLE_PERIOD
+- FULL_DAY
+
+支持字符串解析：
+- singlePeriod / single / period
+- fullDay / day / all
+
+
+3. backend/model/CrowdType.java
+
+定义人群类型：
+- FAST
+- NORMAL
+- SLOW
+
+
+4. backend/model/ArrivalPeak.java
+
+表示高斯峰值参数。
+
+字段包括：
+- name
+- mealPeriod
+- meanMinuteOfDay
+- sigmaMinutes
+- amplitudePerMinute
+- source
+
+对应表达式：
+lambda(t) = base + sum(amplitude * exp(-(t - mean)^2 / (2 * sigma^2)))
+
+
+5. backend/model/ArrivalDistributionPoint.java
+
+表示某一分钟的到达强度数据。
+
+字段包括：
+- mealPeriod
+- minuteOfDay
+- minuteFromSimulationStart
+- baseIntensity
+- peakIntensity
+- totalIntensity
+
+这个结构适合前端直接画折线图或面积图。
+
+
+6. backend/model/MealArrivalStats.java
+
+表示单个餐段的统计结果。
+
+字段包括：
+- mealPeriod
+- population
+- backgroundPopulation
+- peakPopulation
+- peaks
+- distributionPoints
+
+
+7. backend/model/ArrivalGenerationResult.java
+
+表示一次完整的人员到来初始化结果。
+
+字段包括：
+- simulationMode
+- totalPopulation
+- students
+- arrivalEvents
+- mealStats
+
+
+四、前端调用说明
+
+当前 frontend 没有被修改。现有前端仍然可以调用：
+
+ArrivalModule arrivalModule = new ArrivalModule(CanteenConfig.RANDOM_SEED);
+List<Student> students = arrivalModule.generateStudents();
+
+该调用会使用后端配置中的：
+- CanteenConfig.TOTAL_POPULATION
+- CanteenConfig.SIMULATION_MODE
+- CanteenConfig.MEAL_PERIOD
+
+默认情况下：
+- TOTAL_POPULATION = 1000
+- SIMULATION_MODE = SINGLE_PERIOD
+- MEAL_PERIOD = LUNCH
+
+也就是说，如果前端暂时不改，默认会生成“单时段午餐”的到达数据。
+
+
+五、推荐的前端新调用方式
+
+推荐前端以后使用 SimulationConfigRequest 统一传参：
+
+SimulationConfigRequest request = new SimulationConfigRequest();
+request.setTableCount(dto.totalTables);
+request.setOpenDuration(dto.openDuration);
+request.setWindowCount(dto.windowCount);
+request.setRandomSeed(dto.randomSeed);
+request.setProbSolo(dto.probSolo);
+
+request.setTotalPopulation(dto.totalStudents);
+request.setSimulationMode("singlePeriod"); // 或 "fullDay"
+request.setMealPeriod("lunch");            // breakfast / lunch / dinner
+
+CanteenConfig.updateAllConfigs(request);
+
+ArrivalModule arrivalModule = new ArrivalModule(CanteenConfig.RANDOM_SEED);
+ArrivalGenerationResult result = arrivalModule.generateArrivalPlan(
+        CanteenConfig.TOTAL_POPULATION,
+        CanteenConfig.SIMULATION_MODE,
+        CanteenConfig.MEAL_PERIOD
+);
+
+List<Student> students = result.getStudents();
+List<SimulationEvent> arrivalEvents = result.getArrivalEvents();
+
+
+六、单时段模式示例
+
+request.setTotalPopulation(8000);
+request.setSimulationMode("singlePeriod");
+request.setMealPeriod("breakfast");
+
+效果：
+- 后端根据 8000 总人数自动推导早餐人数。
+- 只生成早餐到达事件。
+- result.getMealStats() 中只包含 BREAKFAST 的统计和可视化数据。
+
+
+七、全天模式示例
+
+request.setTotalPopulation(8000);
+request.setSimulationMode("fullDay");
+request.setMealPeriod("lunch");
+
+说明：
+- 全天模式下 mealPeriod 会被忽略。
+- 后端会自动生成早餐、午餐、晚餐。
+- 三餐到达事件会合并为一份按时间排序的 arrivalEvents。
+- result.getMealStats() 中包含 BREAKFAST、LUNCH、DINNER 三个餐段的统计。
+
+
+八、前端可视化数据读取方式
+
+ArrivalGenerationResult result = arrivalModule.getLastGenerationResult();
+
+或者使用 generateArrivalPlan 的返回值：
+
+ArrivalGenerationResult result = arrivalModule.generateArrivalPlan(
+        totalPopulation,
+        SimulationMode.FULL_DAY,
+        MealPeriod.LUNCH
+);
+
+读取每个餐段的峰值参数：
+
+Map<MealPeriod, MealArrivalStats> statsMap = result.getMealStats();
+MealArrivalStats lunchStats = statsMap.get(MealPeriod.LUNCH);
+List<ArrivalPeak> peaks = lunchStats.getPeaks();
+
+读取每分钟到达强度：
+
+List<ArrivalDistributionPoint> points = lunchStats.getDistributionPoints();
+
+每个 point 包含：
+- minuteOfDay：一天中的分钟数，例如 720 表示 12:00
+- minuteFromSimulationStart：相对本次仿真开始的分钟数
+- baseIntensity：背景散客流强度
+- peakIntensity：峰值流强度
+- totalIntensity：总强度
+
+
+九、后续前端需要补充的字段
+
+如果要完整支持这次后端能力，前端配置界面建议增加：
+
+1. 学校总人数
+   当前已有 totalStudents，可以直接映射到后端 totalPopulation。
+
+2. 模拟模式
+   可选：
+   - singlePeriod
+   - fullDay
+
+3. 单时段餐段
+   可选：
+   - breakfast
+   - lunch
+   - dinner
+
+注意：
+- 这次没有修改 frontend。
+- 前端后续只需要把这些字段传给 backend 即可。
+
+
+十、编译验证
+
+已对 backend 相关代码执行 javac 编译检查，结果通过。
+
+检查范围包括：
+- backend/config
+- backend/model
+- backend/module
+- backend/engine
+- frontend/SimulationEventListener.java（仅作为 SimulationEngine 编译依赖读取，没有修改）
+
