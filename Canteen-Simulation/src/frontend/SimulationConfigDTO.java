@@ -12,6 +12,10 @@ public class SimulationConfigDTO {
     public double probSolo = 0.7;      // 默认单人概率 0.7
     public long randomSeed = 20260407L; // 默认随机种子
 
+    // 【新增】：对接后端的新维度
+    public String simulationMode; // "singlePeriod" 或 "fullDay"
+    public String mealPeriod;     // "breakfast", "lunch", "dinner"
+
     // 空构造函数（必须有，为了方便后续的 JSON 自动解析）
     public SimulationConfigDTO() {}
 }
