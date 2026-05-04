@@ -9,6 +9,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class SimulationConfigDialog extends JDialog {
+    private JComboBox<String> modeComboBox;
+    private JComboBox<String> mealComboBox;
 
     // UI 组件：输入框
     private JTextField tablesField;
@@ -38,7 +40,7 @@ public class SimulationConfigDialog extends JDialog {
         seedField = new JTextField(String.valueOf(defaultDto.randomSeed));
 
         // 2. 组装表单面板 (使用 GridLayout 两列排布)
-        JPanel formPanel = new JPanel(new GridLayout(6, 2, 10, 15));
+        JPanel formPanel = new JPanel(new GridLayout(8, 2, 10, 15));
         formPanel.setBorder(BorderFactory.createEmptyBorder(20, 30, 20, 30));
 
         formPanel.add(new JLabel("就餐区桌子总数 (1-42):"));
@@ -59,6 +61,26 @@ public class SimulationConfigDialog extends JDialog {
 
         formPanel.add(new JLabel("随机种子 (用于复现):"));
         formPanel.add(seedField);
+
+        // 【新增】：模拟模式下拉框
+        formPanel.add(new JLabel("模拟模式:"));
+        String[] modes = {"单时段 (Single Period)", "全天仿真 (Full Day)"};
+        modeComboBox = new JComboBox<>(modes);
+        formPanel.add(modeComboBox);
+
+        // 【新增】：餐段选择下拉框
+        formPanel.add(new JLabel("目标餐段:"));
+        String[] meals = {"早餐 (Breakfast)", "午餐 (Lunch)", "晚餐 (Dinner)"};
+        mealComboBox = new JComboBox<>(meals);
+        // 默认选午餐，因为午餐逻辑最复杂
+        mealComboBox.setSelectedIndex(1);
+        formPanel.add(mealComboBox);
+
+        // 【高阶联动体验】：如果选了全天，就把餐段下拉框置灰（因为全天模式不需要选单餐）
+        modeComboBox.addActionListener(e -> {
+            boolean isSingle = modeComboBox.getSelectedIndex() == 0;
+            mealComboBox.setEnabled(isSingle);
+        });
 
         this.add(formPanel, BorderLayout.CENTER);
 
@@ -130,6 +152,12 @@ public class SimulationConfigDialog extends JDialog {
             dto.probSolo = Double.parseDouble(probSoloField.getText().trim());
             dto.randomSeed = Long.parseLong(seedField.getText().trim());
             dto.totalStudents = Integer.parseInt(studentsField.getText().trim());
+            dto.simulationMode = modeComboBox.getSelectedIndex() == 0 ? "singlePeriod" : "fullDay";
+
+            int mealIdx = mealComboBox.getSelectedIndex();
+            if (mealIdx == 0) dto.mealPeriod = "breakfast";
+            else if (mealIdx == 1) dto.mealPeriod = "lunch";
+            else dto.mealPeriod = "dinner";
 
             // 业务规则校验
             if (dto.totalTables <= 0 || dto.totalTables > 42) {

@@ -90,13 +90,54 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
             SimulationConfigDTO dto = configDialog.getConfigData();
 
             try {
+                // [原有的前端自身配置可能还需要保留]
                 applyConfig(dto);
+
+                // =========================================
+                // 【新增 1：把 DTO 转换成后端的 Request 格式】
+                // =========================================
+                backend.config.SimulationConfigRequest request = new backend.config.SimulationConfigRequest();
+                request.setTableCount(dto.totalTables);
+                request.setOpenDuration(dto.openDuration);
+                request.setWindowCount(dto.windowCount);
+                request.setRandomSeed(dto.randomSeed);
+
+                // =========================================
+                // 【智能概率分配算法】：绝对无损的浮点数分配法
+                // =========================================
+                double solo = dto.probSolo; // 比如界面传过来 0.7 或 0.8
+                request.setProbSolo(solo);
+
+                // 算出剩余的结伴概率池 (比如 1.0 - 0.8 = 0.2)
+                double remainder = 1.0 - solo;
+
+                // 假设在结伴的人中，双人占 70%，三人及以上团队占 30%
+                double duo = remainder * 0.7;
+                request.setProbDuo(duo);
+
+                // 【终极防御】：最后一个 team 概率直接用 1.0 减去前两个，彻底斩断精度丢失！
+                double team = 1.0 - solo - duo;
+                request.setProbTeam(team);
+                // =========================================
+
+                // 接上新加的三个维度
+                request.setTotalPopulation(dto.totalStudents);
+                request.setSimulationMode(dto.simulationMode);
+                request.setMealPeriod(dto.mealPeriod);
+
+                // 强制更新后端的全局配置
+                backend.config.CanteenConfig.updateAllConfigs(request);
 
                 myDiningPanel.updateTableCount(dto.totalTables);
                 myQueuePanel.updateWindowCount(dto.windowCount);
 
                 logTextArea.setText("");
                 appendLog(">>> 初始化配置注入成功！桌数: " + dto.totalTables + " | 窗口: " + dto.windowCount);
+                if ("fullDay".equals(dto.simulationMode)) {
+                    appendLog(">>> 仿真模式: 全天无缝聚合仿真 (早中晚连续时间轴)");
+                } else {
+                    appendLog(">>> 仿真模式: 单时段仿真 | 目标餐段: " + dto.mealPeriod);
+                }
                 appendLog(">>> 正在点火，启动正式仿真引擎...");
 
                 startButton.setEnabled(false);
@@ -104,13 +145,27 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
 
                 delayTimer = new javax.swing.Timer(800, event -> {
                     try {
-                        appendLog(">>> 仿真引擎启动成功！正在生成学生剧本...");
+                        appendLog(">>> 仿真引擎启动成功！正在生成复杂客流剧本...");
 
-                        ArrivalModule arrivalModule = new ArrivalModule(CanteenConfig.RANDOM_SEED);
-                        List<Student> students = arrivalModule.generateStudents();
+                        // =========================================
+                        // 【新增 3：调用后端的全新到达计划接口】
+                        // =========================================
+                        ArrivalModule arrivalModule = new ArrivalModule(backend.config.CanteenConfig.RANDOM_SEED);
+
+                        // 获取包含峰值、三餐和事件的超级结果包
+                        backend.model.ArrivalGenerationResult result = arrivalModule.generateArrivalPlan(
+                                backend.config.CanteenConfig.TOTAL_POPULATION,
+                                backend.config.CanteenConfig.SIMULATION_MODE,
+                                backend.config.CanteenConfig.MEAL_PERIOD
+                        );
+
+                        // 从结果包里提取出我们要的 students 列表
+                        List<Student> students = result.getStudents();
+                        // =========================================
 
                         appendLog(">>> 学生数据生成完成，共 " + students.size() + " 名学生。");
 
+                        // 把拿到的新 students 原封不动传给你的引擎
                         simulationEngine = new SimulationEngine(students, frame, 50L);
                         simulationThread = new Thread(simulationEngine, "SimulationEngine");
                         simulationThread.start();
