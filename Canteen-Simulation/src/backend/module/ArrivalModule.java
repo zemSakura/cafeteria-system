@@ -29,9 +29,11 @@ import java.util.concurrent.BlockingQueue;
  *
  * Responsibilities:
  * 1. Initialize static canteen windows.
- * 2. Derive meal populations from totalPopulation.
- * 3. Generate concrete student arrivals from background flow plus Gaussian peaks.
- * 4. Provide visualization data for frontend charts.
+ * 2. Generate exactly the requested number of students for each selected meal period.
+ * 3. Allocate arrivals on the configured time range by a truncated Gaussian distribution.
+ *    The frontend openDuration is in minutes; generated arrivalTime is in seconds.
+ * 4. Keep group sizes limited to 1, 2 and 4.
+ * 5. Provide visualization data for frontend charts.
  *
  * This module does not operate Swing UI components and does not execute queueing
  * or dining logic.
@@ -126,7 +128,7 @@ public class ArrivalModule {
     }
 
     /**
-     * New explicit entry for frontend/backend integration.
+     * Explicit entry for frontend/backend integration.
      */
     public ArrivalGenerationResult generateArrivalPlan(int totalPopulation,
                                                        SimulationMode simulationMode,
@@ -143,50 +145,47 @@ public class ArrivalModule {
 
         List<Student> students = new ArrayList<>();
         Map<MealPeriod, MealArrivalStats> mealStats = new LinkedHashMap<>();
+        List<ArrivalGenerationResult.PhaseBoundary> phaseBoundaries = new ArrayList<>();
 
         int[] counters = {1, 1};
-        int simulationBaseMinute = 0;
-
-        List<ArrivalGenerationResult.PhaseBoundary> phaseBoundaries = new ArrayList<>();
+        int simulationBaseSecond = 0;
 
         for (int i = 0; i < periods.size(); i++) {
             MealPeriod period = periods.get(i);
             int population = populations.get(period);
-            int periodStartTick = simulationBaseMinute;
+            int periodStartSecond = simulationBaseSecond;
 
             PeriodGeneration generation = generatePeriodStudents(
                     period,
                     population,
-                    simulationBaseMinute,
+                    simulationBaseSecond,
                     counters
             );
             students.addAll(generation.students);
             mealStats.put(period, generation.stats);
 
+            int periodEndSecond = simulationBaseSecond + getConfiguredDurationSeconds();
+            phaseBoundaries.add(new ArrivalGenerationResult.PhaseBoundary(
+                    mealPeriodChineseName(period),
+                    buildPhaseLabel(period),
+                    periodStartSecond,
+                    mode == SimulationMode.FULL_DAY ? periodEndSecond : -1
+            ));
+
             if (mode == SimulationMode.FULL_DAY) {
-                simulationBaseMinute += period.getDurationMinutes();
-                int periodEndTick = simulationBaseMinute;
+                simulationBaseSecond = periodEndSecond;
 
-                // 餐段阶段
-                String cnName = mealPeriodChineseName(period);
-                String label = cnName + "时段 "
-                        + formatMinuteOfDay(period.getStartMinute()) + "-"
-                        + formatMinuteOfDay(period.getEndMinute());
-                phaseBoundaries.add(new ArrivalGenerationResult.PhaseBoundary(
-                        cnName, label, periodStartTick, periodEndTick));
-
-                // 餐段间隔（最后一个餐段后不加间隔）
-                if (i < periods.size() - 1) {
-                    int gapStart = simulationBaseMinute;
-                    int gapEnd = simulationBaseMinute + CanteenConfig.MEAL_GAP_TICKS;
+                if (i < periods.size() - 1 && CanteenConfig.MEAL_GAP_TICKS > 0) {
+                    int gapStart = simulationBaseSecond;
+                    int gapEnd = simulationBaseSecond + CanteenConfig.MEAL_GAP_TICKS;
                     phaseBoundaries.add(new ArrivalGenerationResult.PhaseBoundary(
-                            "关闭中", "食堂关闭中", gapStart, gapEnd));
-                    simulationBaseMinute = gapEnd;
+                            "关闭中",
+                            "食堂关闭中",
+                            gapStart,
+                            gapEnd
+                    ));
+                    simulationBaseSecond = gapEnd;
                 }
-            } else {
-                phaseBoundaries.add(new ArrivalGenerationResult.PhaseBoundary(
-                        period.getDisplayName(), period.getDisplayName(),
-                        periodStartTick, -1));
             }
         }
 
@@ -214,41 +213,16 @@ public class ArrivalModule {
     }
 
     /**
-     * First layer: derive meal populations from totalPopulation.
-     *
-     * General campus rule enforced here:
-     * breakfast < dinner < lunch.
+     * The frontend input is now treated as the exact number of students in each
+     * selected meal period. For a single-period simulation, entering breakfast
+     * 1000 will generate exactly 1000 breakfast students. For full-day mode,
+     * the same value is used for breakfast, lunch and dinner respectively.
      */
     public Map<MealPeriod, Integer> deriveMealPopulations(int totalPopulation) {
-        int breakfast = (int) Math.round(totalPopulation * (
-                CanteenConfig.BREAKFAST_BASE_RATE * (1.0 - CanteenConfig.BREAKFAST_SKIP_RATE)
-                        + CanteenConfig.EARLY_CLASS_RATIO * CanteenConfig.EARLY_CLASS_BREAKFAST_BOOST
-        ));
-
-        int lunch = (int) Math.round(totalPopulation
-                * CanteenConfig.LUNCH_BASE_RATE
-                * (1.0 - CanteenConfig.TAKEOUT_RATE_AT_LUNCH));
-
-        int dinner = (int) Math.round(totalPopulation * (
-                CanteenConfig.DINNER_BASE_RATE
-                        + CanteenConfig.EVENING_CLASS_RATIO * 0.10
-        ) * (1.0 - CanteenConfig.DINNER_SKIP_OR_OFF_CAMPUS_RATE));
-
-        lunch = Math.max(lunch, 1);
-        dinner = Math.max(dinner, 1);
-        breakfast = Math.max(breakfast, 1);
-
-        if (dinner >= lunch) {
-            dinner = Math.max(1, (int) Math.round(lunch * 0.78));
-        }
-        if (breakfast >= dinner) {
-            breakfast = Math.max(1, (int) Math.round(dinner * 0.62));
-        }
-
         Map<MealPeriod, Integer> result = new LinkedHashMap<>();
-        result.put(MealPeriod.BREAKFAST, breakfast);
-        result.put(MealPeriod.LUNCH, lunch);
-        result.put(MealPeriod.DINNER, dinner);
+        result.put(MealPeriod.BREAKFAST, totalPopulation);
+        result.put(MealPeriod.LUNCH, totalPopulation);
+        result.put(MealPeriod.DINNER, totalPopulation);
         return result;
     }
 
@@ -319,40 +293,30 @@ public class ArrivalModule {
 
     private PeriodGeneration generatePeriodStudents(MealPeriod period,
                                                     int population,
-                                                    int simulationBaseMinute,
+                                                    int simulationBaseSecond,
                                                     int[] counters) {
-        int backgroundPopulation = (int) Math.round(population * CanteenConfig.BACKGROUND_FLOW_RATIO);
-        backgroundPopulation = Math.min(Math.max(backgroundPopulation, 1), population);
-        int peakPopulation = population - backgroundPopulation;
+        int configuredDurationSecond = getConfiguredDurationSeconds();
+        double meanSecond = (configuredDurationSecond - 1) / 2.0;
+        double sigmaSeconds = Math.max(1.0, configuredDurationSecond / 6.0);
 
-        List<ArrivalPeak> peaks = createPeaks(period, peakPopulation);
+        List<ArrivalPeak> peaks = createPeaks(period, population);
         List<ArrivalDistributionPoint> distributionPoints = createDistributionPoints(
                 period,
-                backgroundPopulation,
+                0,
                 peaks,
-                simulationBaseMinute
+                simulationBaseSecond / 60
         );
 
-        List<ArrivalCandidate> candidates = new ArrayList<>();
-        addBackgroundCandidates(candidates, period, backgroundPopulation);
-        addPeakCandidates(candidates, period, peakPopulation, peaks);
-
-        candidates.sort(Comparator.comparingInt(candidate -> candidate.minuteOfDay));
-
+        List<Integer> groupSizes = generateGroupSizes(population);
         List<Student> students = new ArrayList<>();
-        int index = 0;
-        while (index < candidates.size()) {
-            int remaining = candidates.size() - index;
-            int groupSize = Math.min(determineGroupSize(), remaining);
+
+        for (Integer groupSize : groupSizes) {
             int groupId = counters[1]++;
-            int groupMinute = candidates.get(index).minuteOfDay;
-            CrowdType groupCrowdType = candidates.get(index).crowdType;
-            String source = candidates.get(index).source;
-            long groupArrivalTime = toSimulationMinute(period, groupMinute, simulationBaseMinute);
+            CrowdType groupCrowdType = determineCrowdType();
+            int groupSecond = sampleTruncatedGaussianSecond(0, configuredDurationSecond - 1, meanSecond, sigmaSeconds);
+            long groupArrivalTime = simulationBaseSecond + groupSecond;
 
             for (int i = 0; i < groupSize; i++) {
-                ArrivalCandidate candidate = candidates.get(index + i);
-
                 students.add(new Student(
                         counters[0]++,
                         groupId,
@@ -362,17 +326,20 @@ public class ArrivalModule {
                         generatePatience(groupCrowdType),
                         period,
                         groupCrowdType,
-                        source
+                        "normal_distribution"
                 ));
             }
-            index += groupSize;
         }
+
+        students.sort(Comparator.comparingLong(Student::getArrivalTime)
+                .thenComparingInt(Student::getGroupId)
+                .thenComparingInt(Student::getId));
 
         MealArrivalStats stats = new MealArrivalStats(
                 period,
                 population,
-                backgroundPopulation,
-                peakPopulation,
+                0,
+                population,
                 peaks,
                 distributionPoints
         );
@@ -381,24 +348,20 @@ public class ArrivalModule {
     }
 
     private List<ArrivalPeak> createPeaks(MealPeriod period, int peakPopulation) {
+        int configuredStartMinute = period.getStartMinute();
+        int configuredEndMinute = getConfiguredEndMinute(period);
+        double meanMinute = (configuredStartMinute + configuredEndMinute) / 2.0;
+        double sigmaMinutes = Math.max(1.0, getConfiguredDurationMinutes() / 6.0);
+
         List<ArrivalPeak> peaks = new ArrayList<>();
-
-        if (period == MealPeriod.BREAKFAST) {
-            peaks.add(createPeak("early-breakfast", period, 7 * 60 + 5, 12.0, peakPopulation * 0.45, "early_class"));
-            peaks.add(createPeak("late-breakfast", period, 8 * 60, 15.0, peakPopulation * 0.55, "late_breakfast"));
-        } else if (period == MealPeriod.LUNCH) {
-            double weightSum = sum(CanteenConfig.LUNCH_BATCH_WEIGHTS);
-            for (int i = 0; i < CanteenConfig.LUNCH_BATCH_WEIGHTS.length; i++) {
-                double share = CanteenConfig.LUNCH_BATCH_WEIGHTS[i] / weightSum;
-                int mean = CanteenConfig.LUNCH_RELEASE_TIMES[i] + CanteenConfig.LUNCH_PEAK_DELAY_MEANS[i];
-                peaks.add(createPeak("lunch-batch-" + (i + 1), period, mean, 9.0, peakPopulation * share, "lunch_batch_" + (i + 1)));
-            }
-        } else {
-            int mainMean = CanteenConfig.DINNER_UNIFIED_RELEASE_TIME + CanteenConfig.DINNER_PEAK_DELAY_MEAN;
-            peaks.add(createPeak("dinner-unified-release", period, mainMean, 14.0, peakPopulation * 0.75, "evening_class_release"));
-            peaks.add(createPeak("dinner-late", period, 18 * 60 + 30, 18.0, peakPopulation * 0.25, "late_dinner"));
-        }
-
+        peaks.add(createPeak(
+                period.getCode() + "-normal-arrival",
+                period,
+                (int) Math.round(meanMinute),
+                sigmaMinutes,
+                peakPopulation,
+                "normal_distribution"
+        ));
         return peaks;
     }
 
@@ -417,9 +380,9 @@ public class ArrivalModule {
                                                                     List<ArrivalPeak> peaks,
                                                                     int simulationBaseMinute) {
         List<ArrivalDistributionPoint> points = new ArrayList<>();
-        double base = backgroundPopulation / (double) period.getDurationMinutes();
+        double base = 0.0;
 
-        for (int minute = period.getStartMinute(); minute <= period.getEndMinute(); minute++) {
+        for (int minute = period.getStartMinute(); minute <= getConfiguredEndMinute(period); minute++) {
             double peakIntensity = 0.0;
             for (ArrivalPeak peak : peaks) {
                 peakIntensity += gaussianIntensity(minute, peak);
@@ -441,10 +404,9 @@ public class ArrivalModule {
                                          MealPeriod period,
                                          int count) {
         int startMinute = period.getStartMinute();
-        int endMinute = period.getEndMinute();
-        int duration = Math.max(1, period.getDurationMinutes());
+        int endMinute = getConfiguredEndMinute(period);
+        int duration = Math.max(1, getConfiguredDurationMinutes());
 
-        // Stratified sampling avoids long blank stretches inside one meal period.
         for (int i = 0; i < count; i++) {
             double segmentStart = startMinute + (duration * i / (double) count);
             double segmentEnd = startMinute + (duration * (i + 1) / (double) count);
@@ -480,13 +442,92 @@ public class ArrivalModule {
                         + random.nextGaussian() * peak.getSigmaMinutes()
                         + delay);
                 candidates.add(new ArrivalCandidate(
-                        clamp(minute, period.getStartMinute(), period.getEndMinute()),
+                        clamp(minute, period.getStartMinute(), getConfiguredEndMinute(period)),
                         crowdType,
                         peak.getSource()
                 ));
             }
             created += count;
         }
+    }
+
+    private List<Integer> generateGroupSizes(int population) {
+        List<Integer> result = new ArrayList<>();
+        int remaining = population;
+
+        while (remaining > 0) {
+            int groupSize = determineGroupSize(remaining);
+            result.add(groupSize);
+            remaining -= groupSize;
+        }
+
+        return result;
+    }
+
+    private int determineGroupSize(int remaining) {
+        if (remaining <= 1) {
+            return 1;
+        }
+        if (remaining == 2) {
+            return chooseBetweenSoloAndDuo();
+        }
+        if (remaining == 3) {
+            return chooseBetweenSoloAndDuo();
+        }
+
+        return determineGroupSize();
+    }
+
+    private int chooseBetweenSoloAndDuo() {
+        double solo = Math.max(0.0, CanteenConfig.PROB_SOLO);
+        double duo = Math.max(0.0, CanteenConfig.PROB_DUO);
+        double sum = solo + duo;
+        if (sum <= 0.0) {
+            return 1;
+        }
+        return random.nextDouble() < solo / sum ? 1 : 2;
+    }
+
+    private int sampleTruncatedGaussianMinute(int startMinute,
+                                              int endMinute,
+                                              double meanMinute,
+                                              double sigmaMinutes) {
+        for (int i = 0; i < 100; i++) {
+            int minute = (int) Math.round(meanMinute + random.nextGaussian() * sigmaMinutes);
+            if (minute >= startMinute && minute <= endMinute) {
+                return minute;
+            }
+        }
+
+        int fallback = (int) Math.round(meanMinute + random.nextGaussian() * sigmaMinutes);
+        return clamp(fallback, startMinute, endMinute);
+    }
+
+    private int sampleTruncatedGaussianSecond(int startSecond,
+                                              int endSecond,
+                                              double meanSecond,
+                                              double sigmaSeconds) {
+        for (int i = 0; i < 100; i++) {
+            int second = (int) Math.round(meanSecond + random.nextGaussian() * sigmaSeconds);
+            if (second >= startSecond && second <= endSecond) {
+                return second;
+            }
+        }
+
+        int fallback = (int) Math.round(meanSecond + random.nextGaussian() * sigmaSeconds);
+        return clamp(fallback, startSecond, endSecond);
+    }
+
+    private int getConfiguredDurationMinutes() {
+        return Math.max(1, CanteenConfig.OPEN_DURATION);
+    }
+
+    private int getConfiguredDurationSeconds() {
+        return getConfiguredDurationMinutes() * 60;
+    }
+
+    private int getConfiguredEndMinute(MealPeriod period) {
+        return period.getStartMinute() + getConfiguredDurationMinutes() - 1;
     }
 
     private int toSimulationMinute(MealPeriod period, int minuteOfDay, int simulationBaseMinute) {
@@ -531,10 +572,10 @@ public class ArrivalModule {
                 + random.nextInt(CanteenConfig.PATIENCE_MAX - CanteenConfig.PATIENCE_MIN + 1);
 
         if (crowdType == CrowdType.FAST) {
-            return Math.max(CanteenConfig.PATIENCE_MIN, base - 2);
+            return Math.max(CanteenConfig.PATIENCE_MIN, base - 2 * 60);
         }
         if (crowdType == CrowdType.SLOW) {
-            return Math.min(CanteenConfig.PATIENCE_MAX + 3, base + 2);
+            return Math.min(CanteenConfig.PATIENCE_MAX + 3 * 60, base + 2 * 60);
         }
         return base;
     }
@@ -564,26 +605,34 @@ public class ArrivalModule {
         return Math.max(min, Math.min(max, value));
     }
 
-    private double sum(double[] values) {
-        double total = 0.0;
-        for (double value : values) {
-            total += value;
+    private static String mealPeriodChineseName(MealPeriod period) {
+        if (period == null) {
+            return "未知";
         }
-        return total;
+        switch (period) {
+            case BREAKFAST:
+                return "早餐";
+            case LUNCH:
+                return "午餐";
+            case DINNER:
+                return "晚餐";
+            default:
+                return period.getDisplayName();
+        }
     }
 
-    private static String mealPeriodChineseName(MealPeriod period) {
-        switch (period) {
-            case BREAKFAST: return "早餐";
-            case LUNCH:     return "午餐";
-            case DINNER:    return "晚餐";
-            default:        return period.getDisplayName();
-        }
+    private String buildPhaseLabel(MealPeriod period) {
+        int startMinute = period.getStartMinute();
+        int endMinute = getConfiguredEndMinute(period);
+        return mealPeriodChineseName(period) + "时段 "
+                + formatMinuteOfDay(startMinute) + "-"
+                + formatMinuteOfDay(endMinute);
     }
 
     private static String formatMinuteOfDay(int minuteOfDay) {
-        int hour = minuteOfDay / 60;
-        int minute = minuteOfDay % 60;
+        int normalized = Math.max(0, minuteOfDay);
+        int hour = (normalized / 60) % 24;
+        int minute = normalized % 60;
         return String.format("%02d:%02d", hour, minute);
     }
 

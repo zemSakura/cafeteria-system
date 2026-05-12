@@ -3,41 +3,67 @@ package backend.config;
 import backend.model.MealPeriod;
 import backend.model.SimulationMode;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.Random;
 
 /**
  * Global runtime configuration for the cafeteria simulation.
  *
- * The current project uses static runtime configuration. This class keeps that
- * style, but centralizes all arrival initialization parameters so the arrival
- * model can be adjusted without scattering magic numbers through modules.
+ * Notes for the current simulation version:
+ * 1. The frontend openDuration field is still entered in minutes.
+ * 2. Backend event time is stored in seconds, so openDuration will be converted
+ *    to seconds when generating arrival times.
+ * 3. Window service time, patience time and dining time are all stored in seconds.
  */
 public class CanteenConfig {
 
     private CanteenConfig() {
     }
 
-    public static final String TIME_UNIT_DESCRIPTION = "1 simulation time unit = 1 minute";
+    public static final String TIME_UNIT_DESCRIPTION = "1 simulation time unit = 1 second";
 
     // =========================================================
     // Default values
     // =========================================================
 
     public static final int DEFAULT_TOTAL_TABLES = 150;
+
+    /**
+     * Frontend input unit: minute.
+     */
     public static final int DEFAULT_OPEN_DURATION = 120;
-    public static final int DEFAULT_MEAL_GAP_TICKS = 60;
+
+    /**
+     * Unit: second. Default gap between full-day meal periods is 60 minutes.
+     */
+    public static final int DEFAULT_MEAL_GAP_TICKS = 60 * 60;
+
     public static final int DEFAULT_SNAPSHOT_INTERVAL = 5;
     public static final long DEFAULT_RANDOM_SEED = 20260324L;
 
     public static final int[] DEFAULT_WINDOW_DISTANCES = {10, 15, 20, 25, 30};
-    public static final int[] DEFAULT_WINDOW_AVG_SERVE_TIME = {1, 2, 1, 2, 2};
 
-    public static final double DEFAULT_DINING_TIME_MEAN = 15.0;
-    public static final double DEFAULT_DINING_TIME_STD = 3.0;
-    public static final int DEFAULT_MIN_DINING_TIME = 5;
+    /**
+     * Unit: second.
+     * Fast windows are about 15-25 seconds; slow windows are about 60-120 seconds.
+     */
+    public static final int[] DEFAULT_WINDOW_AVG_SERVE_TIME = {18, 21, 24, 19, 90};
 
-    public static final int DEFAULT_PATIENCE_MIN = 8;
-    public static final int DEFAULT_PATIENCE_MAX = 25;
+    /**
+     * Unit: second. Default dining time is around 15 minutes.
+     */
+    public static final double DEFAULT_DINING_TIME_MEAN = 15.0 * 60.0;
+    public static final double DEFAULT_DINING_TIME_STD = 3.0 * 60.0;
+    public static final int DEFAULT_MIN_DINING_TIME = 5 * 60;
+
+    /**
+     * Unit: second. Students tolerate about 15-30 minutes of queueing.
+     */
+    public static final int DEFAULT_PATIENCE_MIN = 15 * 60;
+    public static final int DEFAULT_PATIENCE_MAX = 30 * 60;
 
     public static final double DEFAULT_PROB_SOLO = 0.7;
     public static final double DEFAULT_PROB_DUO = 0.2;
@@ -123,12 +149,40 @@ public class CanteenConfig {
         }
 
         WINDOW_DISTANCES = new int[windowCount];
-        WINDOW_AVG_SERVE_TIME = new int[windowCount];
-
         for (int i = 0; i < windowCount; i++) {
             WINDOW_DISTANCES[i] = 10 + i * 5;
-            WINDOW_AVG_SERVE_TIME[i] = 2;
         }
+
+        WINDOW_AVG_SERVE_TIME = generateServeTimesForWindows(windowCount, RANDOM_SEED);
+    }
+
+    private static int[] generateServeTimesForWindows(int windowCount, long seed) {
+        Random random = new Random(seed + windowCount * 131L + 17L);
+        int slowCount = Math.max(1, (int) Math.round(windowCount / 3.0));
+        if (windowCount == 1) {
+            slowCount = 0;
+        }
+        int fastCount = windowCount - slowCount;
+
+        List<Integer> serveTimes = new ArrayList<>();
+        for (int i = 0; i < fastCount; i++) {
+            serveTimes.add(randomBetweenInclusive(random, 15, 25));
+        }
+        for (int i = 0; i < slowCount; i++) {
+            serveTimes.add(randomBetweenInclusive(random, 60, 120));
+        }
+
+        Collections.shuffle(serveTimes, random);
+
+        int[] result = new int[windowCount];
+        for (int i = 0; i < windowCount; i++) {
+            result[i] = serveTimes.get(i);
+        }
+        return result;
+    }
+
+    private static int randomBetweenInclusive(Random random, int min, int max) {
+        return min + random.nextInt(max - min + 1);
     }
 
     public static synchronized void updateWindowConfigs(int[] distances, int[] serveTimes) {
@@ -186,7 +240,6 @@ public class CanteenConfig {
     public static synchronized void resetToDefaults() {
         TOTAL_TABLES = DEFAULT_TOTAL_TABLES;
         OPEN_DURATION = DEFAULT_OPEN_DURATION;
-        MEAL_GAP_TICKS = DEFAULT_MEAL_GAP_TICKS;
         SNAPSHOT_INTERVAL = DEFAULT_SNAPSHOT_INTERVAL;
         RANDOM_SEED = DEFAULT_RANDOM_SEED;
 
@@ -318,15 +371,16 @@ public class CanteenConfig {
         return "CanteenConfig{" +
                 "TOTAL_TABLES=" + TOTAL_TABLES +
                 ", OPEN_DURATION=" + OPEN_DURATION +
+                ", MEAL_GAP_TICKS=" + MEAL_GAP_TICKS +
                 ", SNAPSHOT_INTERVAL=" + SNAPSHOT_INTERVAL +
                 ", RANDOM_SEED=" + RANDOM_SEED +
                 ", WINDOW_DISTANCES=" + Arrays.toString(WINDOW_DISTANCES) +
-                ", WINDOW_AVG_SERVE_TIME=" + Arrays.toString(WINDOW_AVG_SERVE_TIME) +
-                ", DINING_TIME_MEAN=" + DINING_TIME_MEAN +
-                ", DINING_TIME_STD=" + DINING_TIME_STD +
-                ", MIN_DINING_TIME=" + MIN_DINING_TIME +
-                ", PATIENCE_MIN=" + PATIENCE_MIN +
-                ", PATIENCE_MAX=" + PATIENCE_MAX +
+                ", WINDOW_AVG_SERVE_TIME_SECONDS=" + Arrays.toString(WINDOW_AVG_SERVE_TIME) +
+                ", DINING_TIME_MEAN_SECONDS=" + DINING_TIME_MEAN +
+                ", DINING_TIME_STD_SECONDS=" + DINING_TIME_STD +
+                ", MIN_DINING_TIME_SECONDS=" + MIN_DINING_TIME +
+                ", PATIENCE_MIN_SECONDS=" + PATIENCE_MIN +
+                ", PATIENCE_MAX_SECONDS=" + PATIENCE_MAX +
                 ", PROB_SOLO=" + PROB_SOLO +
                 ", PROB_DUO=" + PROB_DUO +
                 ", PROB_TEAM=" + PROB_TEAM +
