@@ -12,6 +12,7 @@ public class SimulationConfigRequest {
     private int tableCount;
     private int windowCount;
     private int openDuration;
+    private int mealGapTicks;
     private int snapshotInterval;
     private long randomSeed;
 
@@ -37,6 +38,7 @@ public class SimulationConfigRequest {
         this.tableCount = CanteenConfig.DEFAULT_TOTAL_TABLES;
         this.windowCount = CanteenConfig.DEFAULT_WINDOW_DISTANCES.length;
         this.openDuration = CanteenConfig.DEFAULT_OPEN_DURATION;
+        this.mealGapTicks = CanteenConfig.DEFAULT_MEAL_GAP_TICKS;
         this.snapshotInterval = CanteenConfig.DEFAULT_SNAPSHOT_INTERVAL;
         this.randomSeed = CanteenConfig.DEFAULT_RANDOM_SEED;
 
@@ -78,6 +80,14 @@ public class SimulationConfigRequest {
 
     public void setOpenDuration(int openDuration) {
         this.openDuration = openDuration;
+    }
+
+    public int getMealGapTicks() {
+        return mealGapTicks;
+    }
+
+    public void setMealGapTicks(int mealGapTicks) {
+        this.mealGapTicks = mealGapTicks;
     }
 
     public int getSnapshotInterval() {

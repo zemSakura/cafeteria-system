@@ -25,7 +25,24 @@ public class ColorTheme {
     public static final Color ACCENT_RED = new Color(255, 82, 82);
     public static final Color ACCENT_YELLOW = new Color(253, 185, 39);
 
-    // 5. 文字颜色 (Text)
+    // 5. 拼桌分组色 (Table-sharing group palette)
+    // 一张桌上可能坐多组人，每组用不同颜色区分
+    public static final Color[] GROUP_COLORS = {
+        new Color(255, 82, 82),    // 红
+        new Color(29, 140, 248),   // 蓝
+        new Color(0, 242, 195),    // 青
+        new Color(253, 185, 39),   // 黄
+        new Color(149, 117, 255),  // 紫
+        new Color(255, 145, 48),   // 橙
+        new Color(0, 200, 117),    // 绿
+        new Color(255, 110, 180),  // 粉
+    };
+
+    public static Color groupColor(int groupId) {
+        return GROUP_COLORS[Math.abs(groupId) % GROUP_COLORS.length];
+    }
+
+    // 6. 文字颜色 (Text)
     // 提升亮度以对抗深色背景，但使用亮灰白而非纯白，消除光晕感
     public static final Color TEXT_PRIMARY = new Color(230, 230, 230); // 亮灰白 (用于主标题、重要数据)
     public static final Color TEXT_SECONDARY = new Color(150, 150, 150); // 清晰的中灰 (用于副标题、日志次要信息)

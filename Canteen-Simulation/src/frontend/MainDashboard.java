@@ -9,7 +9,6 @@ import backend.module.ArrivalModule;
 import javax.swing.*;
 import java.awt.*;
 import java.util.List;
-
 public class MainDashboard extends JFrame implements SimulationEventListener {
 
     private static DiningAreaPanel myDiningPanel;
@@ -17,6 +16,7 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
 
     private static JButton startButton;
     private static JButton stopButton;
+    private static JLabel phaseLabel;
 
     private static MainDashboard frame;
 
@@ -145,6 +145,11 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         panel.add(startButton);
         panel.add(stopButton);
 
+        phaseLabel = new JLabel(" ");
+        phaseLabel.setFont(new java.awt.Font("SansSerif", java.awt.Font.BOLD, 14));
+        phaseLabel.setForeground(ColorTheme.TEXT_SECONDARY);
+        panel.add(phaseLabel);
+
         startButton.addActionListener(e -> {
             SimulationConfigDialog configDialog = new SimulationConfigDialog(null);
             configDialog.setVisible(true);
@@ -198,6 +203,7 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
                 myQueuePanel.updateWindowCount(dto.windowCount);
 
                 logTextArea.setText("");
+                phaseLabel.setText(" ");
                 appendLog(">>> 初始化配置注入成功！桌数: " + dto.totalTables + " | 窗口: " + dto.windowCount);
                 if ("fullDay".equals(dto.simulationMode)) {
                     appendLog(">>> 仿真模式: 全天无缝聚合仿真 (早中晚连续时间轴)");
@@ -231,8 +237,11 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
 
                         appendLog(">>> 学生数据生成完成，共 " + students.size() + " 名学生。");
 
-                        // 把拿到的新 students 原封不动传给你的引擎
-                        simulationEngine = new SimulationEngine(students, frame, 50L);
+                        // 把拿到的新 students 连同阶段边界传给引擎
+                        long timeScale = 20L; // 每 tick 20ms，比原来的 50ms 快 2.5x
+                        simulationEngine = new SimulationEngine(
+                                students, frame, timeScale,
+                                result.getPhaseBoundaries());
                         simulationThread = new Thread(simulationEngine, "SimulationEngine");
                         simulationThread.start();
 
@@ -271,6 +280,8 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
 
             startButton.setEnabled(true);
             stopButton.setEnabled(false);
+            phaseLabel.setText(" ");
+            phaseLabel.setForeground(ColorTheme.TEXT_SECONDARY);
         });
 
         return panel;
@@ -332,15 +343,36 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
     }
 
     @Override
-    public void onTableOccupancyChanged(int tableIndex, int occupiedSeats) {
+    public void onTableOccupancyChanged(int tableIndex, int[] seatGroupIds) {
         SwingUtilities.invokeLater(() -> {
-            myDiningPanel.updateTableOccupancy(tableIndex, occupiedSeats);
+            int total = 0;
+            for (int gid : seatGroupIds) {
+                if (gid >= 0) total++;
+            }
+            myDiningPanel.updateTableOccupancy(tableIndex, seatGroupIds);
             logTextArea.append(String.format(
                     ">>> [桌位] 桌 %02d 当前入座人数: %d%n",
                     tableIndex + 1,
-                    occupiedSeats
+                    total
             ));
             logTextArea.setCaretPosition(logTextArea.getDocument().getLength());
+        });
+    }
+
+    @Override
+    public void onPhaseChanged(String phaseName, String label, long currentTime) {
+        SwingUtilities.invokeLater(() -> {
+            Color phaseColor;
+            switch (phaseName) {
+                case "早餐":   phaseColor = ColorTheme.ACCENT_CYAN;   break;
+                case "午餐":   phaseColor = ColorTheme.ACCENT_YELLOW; break;
+                case "晚餐":   phaseColor = ColorTheme.ACCENT_BLUE;   break;
+                case "关闭中": phaseColor = ColorTheme.TEXT_SECONDARY; break;
+                default:       phaseColor = ColorTheme.TEXT_PRIMARY;  break;
+            }
+            phaseLabel.setText(" ● " + label);
+            phaseLabel.setForeground(phaseColor);
+            appendLog(">>> [阶段] " + label + " (t=" + currentTime + ")");
         });
     }
 
@@ -349,6 +381,8 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         SwingUtilities.invokeLater(() -> {
             startButton.setEnabled(true);
             stopButton.setEnabled(false);
+            phaseLabel.setText(" ● 仿真结束");
+            phaseLabel.setForeground(ColorTheme.TEXT_SECONDARY);
             logTextArea.append(">>> [系统] 本次仿真已结束。\n");
             logTextArea.setCaretPosition(logTextArea.getDocument().getLength());
             JOptionPane.showMessageDialog(this, "本次仿真已圆满结束！");

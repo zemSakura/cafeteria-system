@@ -8,14 +8,18 @@ import backend.model.Window;
 import backend.model.WindowState;
 import frontend.SimulationEventListener;
 
+import backend.model.ArrivalGenerationResult;
+
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -30,10 +34,10 @@ import java.util.Set;
  * 2. 同组成员统一选择窗口
  * 3. 若预计等待超过耐心值，则整组放弃排队
  * 4. 学生完成服务后进入等座区
- * 5. 同组成员尽量同桌入座
- * 6. 桌子随机分配，不再固定按编号顺序
- * 7. 只有同桌最后一个人离开时，桌子才释放
- * 8. 前端能够看到一张桌子真实坐了多少人
+ * 5. 同组成员尽量同桌入座，支持多组拼桌
+ * 6. 桌子按空座数分配，不再要求完全空桌
+ * 7. 同组成员统一用最长就餐时间，吃完一起走
+ * 8. 前端按组颜色区分拼桌情况
  */
 public class SimulationEngine implements Runnable {
 
@@ -71,15 +75,8 @@ public class SimulationEngine implements Runnable {
      */
     private final Set<Integer> abandonedGroups;
 
-    /**
-     * tableId -> 该桌还剩多少人在吃
-     */
-    private final Map<Integer, Integer> tableRemainingDiners;
-
-    /**
-     * tableId -> 当前桌上坐了多少人（给前端显示用）
-     */
-    private final Map<Integer, Integer> tableOccupiedSeats;
+    private final List<ArrivalGenerationResult.PhaseBoundary> phaseBoundaries;
+    private int currentPhaseIndex = -1;
 
     private volatile boolean running = true;
 
@@ -87,12 +84,19 @@ public class SimulationEngine implements Runnable {
     private long currentTime = 0;
 
     public SimulationEngine(List<Student> students, SimulationEventListener listener) {
-        this(students, listener, 50L);
+        this(students, listener, 50L, Collections.emptyList());
     }
 
     public SimulationEngine(List<Student> students,
                             SimulationEventListener listener,
                             long timeScaleMillis) {
+        this(students, listener, timeScaleMillis, Collections.emptyList());
+    }
+
+    public SimulationEngine(List<Student> students,
+                            SimulationEventListener listener,
+                            long timeScaleMillis,
+                            List<ArrivalGenerationResult.PhaseBoundary> phaseBoundaries) {
         this.listener = Objects.requireNonNull(listener, "listener 不能为空");
 
         this.allStudents = new ArrayList<>();
@@ -126,8 +130,7 @@ public class SimulationEngine implements Runnable {
         this.groupChosenWindow = new HashMap<>();
         this.waitingSeatByGroup = new HashMap<>();
         this.abandonedGroups = new HashSet<>();
-        this.tableRemainingDiners = new HashMap<>();
-        this.tableOccupiedSeats = new HashMap<>();
+        this.phaseBoundaries = new ArrayList<>(phaseBoundaries);
 
         for (Student student : this.allStudents) {
             groupMembers.computeIfAbsent(student.getGroupId(), k -> new ArrayList<>()).add(student);
@@ -141,6 +144,9 @@ public class SimulationEngine implements Runnable {
     @Override
     public void run() {
         try {
+            // 广播初始阶段
+            checkAndBroadcastPhase();
+
             while (running) {
                 processDiningCompletions();
                 processServiceCompletions();
@@ -154,12 +160,31 @@ public class SimulationEngine implements Runnable {
 
                 Thread.sleep(timeScaleMillis);
                 currentTime++;
+
+                checkAndBroadcastPhase();
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } finally {
             running = false;
             listener.onSimulationFinished();
+        }
+    }
+
+    private void checkAndBroadcastPhase() {
+        for (int i = currentPhaseIndex + 1; i < phaseBoundaries.size(); i++) {
+            ArrivalGenerationResult.PhaseBoundary pb = phaseBoundaries.get(i);
+            if (currentTime >= pb.startTick && (pb.endTick < 0 || currentTime < pb.endTick)) {
+                currentPhaseIndex = i;
+                listener.onPhaseChanged(pb.name, pb.label, currentTime);
+                return;
+            }
+            // 如果已经超过这个阶段，继续检查下一个
+            if (pb.endTick >= 0 && currentTime >= pb.endTick) {
+                continue;
+            }
+            // 还没到这个阶段，不再检查后面的
+            break;
         }
     }
 
@@ -211,10 +236,17 @@ public class SimulationEngine implements Runnable {
         int windowId = chooseWindowForGroup(members);
         long estimatedWait = estimateWindowWait(windowId);
 
-        int groupPatience = members.stream()
+        // 组耐心取均值，避免一人急性子拖累整组
+        double groupPatience = members.stream()
                 .mapToInt(Student::getPatience)
-                .min()
+                .average()
                 .orElse(0);
+
+        // 偏好窗口忠诚度加成：选中自己最爱窗口时，耐心 +50%
+        int preferredWindow = members.get(0).getPreferredWindow();
+        if (windowId == preferredWindow) {
+            groupPatience *= 1.5;
+        }
 
         if (estimatedWait > groupPatience) {
             abandonGroup(members, "预计等待超过耐心值");
@@ -378,26 +410,32 @@ public class SimulationEngine implements Runnable {
                 continue;
             }
 
-            int tableId = findRandomFreeTableForGroup(allMembers.size());
+            int groupSize = allMembers.size();
+            int tableId = findTableWithEnoughSeats(groupSize);
             if (tableId < 0) {
                 continue;
             }
 
             Table table = tables.get(tableId);
-            table.occupy(groupId, currentTime);
-            tableRemainingDiners.put(tableId, allMembers.size());
-            tableOccupiedSeats.put(tableId, allMembers.size());
+            table.assignSeats(groupId, groupSize, currentTime);
+
+            // 同组成员统一使用最长就餐时间，吃完一起走
+            long maxDiningTime = 0;
+            for (Student student : readyMembers) {
+                maxDiningTime = Math.max(maxDiningTime, student.getDiningTime());
+            }
+            long diningEndTime = currentTime + Math.max(1, maxDiningTime);
 
             for (Student student : readyMembers) {
                 student.setTableId(tableId);
                 student.setSeatAssignedTime(currentTime);
                 student.setDiningStartTime(currentTime);
-                student.setDiningEndTime(currentTime + Math.max(1, student.getDiningTime()));
+                student.setDiningEndTime(diningEndTime);
                 student.setStatus(StudentStatus.DINING);
                 diningStudents.add(student);
             }
 
-            listener.onTableOccupancyChanged(tableId, allMembers.size());
+            listener.onTableOccupancyChanged(tableId, table.getSeatGroupIds());
         }
 
         waitingSeatByGroup.entrySet().removeIf(entry -> {
@@ -407,31 +445,55 @@ public class SimulationEngine implements Runnable {
     }
 
     /**
-     * 随机找一张能容纳整组人数的空桌
+     * 找一张有足够空座位的桌子（支持拼桌）。
+     * 优先选空桌；无空桌时选空座最少、已有人用的桌子（拼桌紧凑）。
      */
-    private int findRandomFreeTableForGroup(int groupSize) {
-        List<Integer> candidates = new ArrayList<>();
+    private int findTableWithEnoughSeats(int groupSize) {
+        List<Integer> emptyTables = new ArrayList<>();
+        List<Integer> sharedTables = new ArrayList<>();
 
         for (Table table : tables) {
-            if (!table.isOccupied() && table.getCapacity() >= groupSize) {
-                candidates.add(table.getId());
+            if (table.getAvailableSeats() >= groupSize) {
+                if (table.getOccupiedSeatCount() == 0) {
+                    emptyTables.add(table.getId());
+                } else {
+                    sharedTables.add(table.getId());
+                }
             }
         }
 
-        if (candidates.isEmpty()) {
-            return -1;
+        if (!emptyTables.isEmpty()) {
+            return emptyTables.get(random.nextInt(emptyTables.size()));
         }
 
-        return candidates.get(random.nextInt(candidates.size()));
+        if (!sharedTables.isEmpty()) {
+            // 拼桌时优先空座最少的，保持紧凑
+            int bestId = -1;
+            int bestAvail = Integer.MAX_VALUE;
+            for (int id : sharedTables) {
+                int avail = tables.get(id).getAvailableSeats();
+                if (avail < bestAvail) {
+                    bestAvail = avail;
+                    bestId = id;
+                } else if (avail == bestAvail && random.nextBoolean()) {
+                    bestId = id;
+                }
+            }
+            return bestId;
+        }
+
+        return -1;
     }
 
     /**
      * 吃完离开
-     * 只有最后一个人离开时才释放桌子
-     * 同时把桌上的实时人数更新给前端
+     * 同组成员统一就餐时间，一桌多组各自释放自己的座位。
+     * 每 tick 结束时批量通知前端，避免同一桌反复刷新。
      */
     private void processDiningCompletions() {
         Iterator<Student> iterator = diningStudents.iterator();
+        Set<Integer> changedTables = new LinkedHashSet<>();
+
         while (iterator.hasNext()) {
             Student student = iterator.next();
             if (student.getDiningEndTime() > currentTime) {
@@ -439,26 +501,22 @@ public class SimulationEngine implements Runnable {
             }
 
             int tableId = student.getTableId();
+            int groupId = student.getGroupId();
 
             student.setStatus(StudentStatus.LEFT_NORMAL);
             student.setLeaveReason("正常就餐结束");
             student.setLeaveTime(currentTime);
 
-            if (tableId >= 0 && tableRemainingDiners.containsKey(tableId)) {
-                int remain = tableRemainingDiners.get(tableId) - 1;
-                if (remain <= 0) {
-                    tables.get(tableId).release(currentTime);
-                    tableRemainingDiners.remove(tableId);
-                    tableOccupiedSeats.remove(tableId);
-                    listener.onTableOccupancyChanged(tableId, 0);
-                } else {
-                    tableRemainingDiners.put(tableId, remain);
-                    tableOccupiedSeats.put(tableId, remain);
-                    listener.onTableOccupancyChanged(tableId, remain);
-                }
+            if (tableId >= 0) {
+                tables.get(tableId).releaseSeats(groupId, currentTime);
+                changedTables.add(tableId);
             }
 
             iterator.remove();
+        }
+
+        for (int tableId : changedTables) {
+            listener.onTableOccupancyChanged(tableId, tables.get(tableId).getSeatGroupIds());
         }
     }
 

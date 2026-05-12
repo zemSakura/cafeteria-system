@@ -25,6 +25,7 @@ public class CanteenConfig {
 
     public static final int DEFAULT_TOTAL_TABLES = 150;
     public static final int DEFAULT_OPEN_DURATION = 120;
+    public static final int DEFAULT_MEAL_GAP_TICKS = 60;
     public static final int DEFAULT_SNAPSHOT_INTERVAL = 5;
     public static final long DEFAULT_RANDOM_SEED = 20260324L;
 
@@ -35,8 +36,8 @@ public class CanteenConfig {
     public static final double DEFAULT_DINING_TIME_STD = 3.0;
     public static final int DEFAULT_MIN_DINING_TIME = 5;
 
-    public static final int DEFAULT_PATIENCE_MIN = 5;
-    public static final int DEFAULT_PATIENCE_MAX = 15;
+    public static final int DEFAULT_PATIENCE_MIN = 8;
+    public static final int DEFAULT_PATIENCE_MAX = 25;
 
     public static final double DEFAULT_PROB_SOLO = 0.7;
     public static final double DEFAULT_PROB_DUO = 0.2;
@@ -71,6 +72,7 @@ public class CanteenConfig {
 
     public static int TOTAL_TABLES = DEFAULT_TOTAL_TABLES;
     public static int OPEN_DURATION = DEFAULT_OPEN_DURATION;
+    public static int MEAL_GAP_TICKS = DEFAULT_MEAL_GAP_TICKS;
     public static int SNAPSHOT_INTERVAL = DEFAULT_SNAPSHOT_INTERVAL;
     public static long RANDOM_SEED = DEFAULT_RANDOM_SEED;
 
@@ -153,6 +155,7 @@ public class CanteenConfig {
 
         TOTAL_TABLES = request.getTableCount();
         OPEN_DURATION = request.getOpenDuration();
+        MEAL_GAP_TICKS = request.getMealGapTicks();
         SNAPSHOT_INTERVAL = request.getSnapshotInterval();
         RANDOM_SEED = request.getRandomSeed();
 
@@ -183,6 +186,7 @@ public class CanteenConfig {
     public static synchronized void resetToDefaults() {
         TOTAL_TABLES = DEFAULT_TOTAL_TABLES;
         OPEN_DURATION = DEFAULT_OPEN_DURATION;
+        MEAL_GAP_TICKS = DEFAULT_MEAL_GAP_TICKS;
         SNAPSHOT_INTERVAL = DEFAULT_SNAPSHOT_INTERVAL;
         RANDOM_SEED = DEFAULT_RANDOM_SEED;
 
@@ -251,6 +255,9 @@ public class CanteenConfig {
         }
         if (OPEN_DURATION <= 0) {
             throw new IllegalArgumentException("open duration must be greater than 0");
+        }
+        if (MEAL_GAP_TICKS < 0) {
+            throw new IllegalArgumentException("meal gap ticks must be >= 0");
         }
         if (SNAPSHOT_INTERVAL <= 0) {
             throw new IllegalArgumentException("snapshot interval must be greater than 0");

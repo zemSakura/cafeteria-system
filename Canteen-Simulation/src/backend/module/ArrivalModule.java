@@ -147,9 +147,13 @@ public class ArrivalModule {
         int[] counters = {1, 1};
         int simulationBaseMinute = 0;
 
+        List<ArrivalGenerationResult.PhaseBoundary> phaseBoundaries = new ArrayList<>();
+
         for (int i = 0; i < periods.size(); i++) {
             MealPeriod period = periods.get(i);
             int population = populations.get(period);
+            int periodStartTick = simulationBaseMinute;
+
             PeriodGeneration generation = generatePeriodStudents(
                     period,
                     population,
@@ -161,6 +165,28 @@ public class ArrivalModule {
 
             if (mode == SimulationMode.FULL_DAY) {
                 simulationBaseMinute += period.getDurationMinutes();
+                int periodEndTick = simulationBaseMinute;
+
+                // 餐段阶段
+                String cnName = mealPeriodChineseName(period);
+                String label = cnName + "时段 "
+                        + formatMinuteOfDay(period.getStartMinute()) + "-"
+                        + formatMinuteOfDay(period.getEndMinute());
+                phaseBoundaries.add(new ArrivalGenerationResult.PhaseBoundary(
+                        cnName, label, periodStartTick, periodEndTick));
+
+                // 餐段间隔（最后一个餐段后不加间隔）
+                if (i < periods.size() - 1) {
+                    int gapStart = simulationBaseMinute;
+                    int gapEnd = simulationBaseMinute + CanteenConfig.MEAL_GAP_TICKS;
+                    phaseBoundaries.add(new ArrivalGenerationResult.PhaseBoundary(
+                            "关闭中", "食堂关闭中", gapStart, gapEnd));
+                    simulationBaseMinute = gapEnd;
+                }
+            } else {
+                phaseBoundaries.add(new ArrivalGenerationResult.PhaseBoundary(
+                        period.getDisplayName(), period.getDisplayName(),
+                        periodStartTick, -1));
             }
         }
 
@@ -175,7 +201,8 @@ public class ArrivalModule {
                 totalPopulation,
                 students,
                 events,
-                mealStats
+                mealStats,
+                phaseBoundaries
         );
 
         if (queue != null) {
@@ -543,6 +570,21 @@ public class ArrivalModule {
             total += value;
         }
         return total;
+    }
+
+    private static String mealPeriodChineseName(MealPeriod period) {
+        switch (period) {
+            case BREAKFAST: return "早餐";
+            case LUNCH:     return "午餐";
+            case DINNER:    return "晚餐";
+            default:        return period.getDisplayName();
+        }
+    }
+
+    private static String formatMinuteOfDay(int minuteOfDay) {
+        int hour = minuteOfDay / 60;
+        int minute = minuteOfDay % 60;
+        return String.format("%02d:%02d", hour, minute);
     }
 
     private static class ArrivalCandidate {
