@@ -45,25 +45,91 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         frame.setLayout(new BorderLayout(10, 10));
 
         frame.add(createConfigPanel(), BorderLayout.NORTH);
-
         frame.getContentPane().setBackground(ColorTheme.BG_MAIN);
-        JPanel centerPanel = new JPanel(new GridLayout(1, 2, 10, 0));
-        centerPanel.setBorder(BorderFactory.createEmptyBorder(0, 10, 0, 10));
 
+        // 1. 顶部控制栏
+        // =========================================
+        // 【架构调整】：最外层包装盒 (不带滚动，负责左右分界)
+        // =========================================
+        JPanel topWrapper = new JPanel(new BorderLayout(10, 0));
+        topWrapper.setOpaque(false);
 
-        myDiningPanel = new DiningAreaPanel(20);
-        centerPanel.add(myDiningPanel);
-        frame.add(centerPanel, BorderLayout.CENTER);
+        // =========================================
+        // 【解耦升级：仅针对“就餐区”的智能滑动包装盒】
+        // =========================================
+        class DiningScrollWrapper extends JPanel implements javax.swing.Scrollable {
+            // 【防挤压底线】：如果桌子变多（比如30桌），觉得被压扁了，可以把这个值调高（如500或600）
+            private final int MIN_HEIGHT = 450;
 
+            public DiningScrollWrapper() {
+                super(new BorderLayout());
+                setOpaque(false);
+            }
+
+            @Override
+            public Dimension getPreferredSize() {
+                Dimension d = super.getPreferredSize();
+                if (getParent() instanceof javax.swing.JViewport) {
+                    // 仅缩放就餐区：视窗够大就拉伸，视窗被挤压到底线就锁死
+                    d.height = Math.max(MIN_HEIGHT, getParent().getHeight());
+                }
+                return d;
+            }
+
+            @Override public Dimension getPreferredScrollableViewportSize() { return getPreferredSize(); }
+            @Override public int getScrollableUnitIncrement(Rectangle r, int o, int d) { return 40; }
+            @Override public int getScrollableBlockIncrement(Rectangle r, int o, int d) { return 100; }
+            @Override public boolean getScrollableTracksViewportWidth() { return true; }
+
+            @Override public boolean getScrollableTracksViewportHeight() {
+                if (getParent() instanceof javax.swing.JViewport) {
+                    return getParent().getHeight() >= MIN_HEIGHT;
+                }
+                return false;
+            }
+        }
+
+        // 1. 组装就餐区及专属滑动窗口
+        DiningScrollWrapper diningWrapper = new DiningScrollWrapper();
+        myDiningPanel = new DiningAreaPanel(30); // 你的30张桌子
+        myDiningPanel.setBackground(ColorTheme.BG_CARD);
+        diningWrapper.add(myDiningPanel, BorderLayout.CENTER);
+
+        JScrollPane diningScroll = new JScrollPane(diningWrapper);
+        diningScroll.setBorder(null);
+        diningScroll.setOpaque(false);
+        diningScroll.getViewport().setOpaque(false);
+        diningScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        diningScroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+
+        // 2. 组装排队区 (独立在右侧，不受就餐区滚动影响)
         myQueuePanel = new QueueAreaPanel(5);
         myQueuePanel.setPreferredSize(new Dimension(250, 0));
-        frame.add(myQueuePanel, BorderLayout.EAST);
-
-        myDiningPanel.setBackground(ColorTheme.BG_CARD);
         myQueuePanel.setBackground(ColorTheme.BG_CARD);
 
-        frame.add(createLogAreaPanel(), BorderLayout.SOUTH);
+        // 3. 终极合体：左边是可以自己滚动+缩放的就餐区，右边是雷打不动的排队区
+        topWrapper.add(diningScroll, BorderLayout.CENTER);
+        topWrapper.add(myQueuePanel, BorderLayout.EAST);
 
+        // =========================================
+        // 【日志与分割面板】
+        // =========================================
+        JPanel logPanel = createLogAreaPanel();
+        logPanel.setMinimumSize(new Dimension(0, 120)); // 日志区最少保留 120 像素
+
+        JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
+        splitPane.setContinuousLayout(true);
+        splitPane.setDividerSize(6);
+
+        // 上面放包含一切的全局滑动视窗，下面放日志
+        splitPane.setTopComponent(topWrapper);
+        splitPane.setBottomComponent(logPanel);
+
+        splitPane.setResizeWeight(1.0);
+        // 将初始分割线设为 0.75 的比例，避免硬编码像素导致在不同屏幕上被截断
+        splitPane.setDividerLocation(0.75);
+
+        frame.add(splitPane, BorderLayout.CENTER);
         frame.setLocationRelativeTo(null);
         frame.setVisible(true);
     }
