@@ -43,7 +43,7 @@ public class SimulationConfigDialog extends JDialog {
         JPanel formPanel = new JPanel(new GridLayout(8, 2, 10, 15));
         formPanel.setBorder(BorderFactory.createEmptyBorder(20, 30, 20, 30));
 
-        formPanel.add(new JLabel("就餐区桌子总数 (1-42):"));
+        formPanel.add(new JLabel("就餐区桌子总数 (1-200):"));
         formPanel.add(tablesField);
 
         formPanel.add(new JLabel("营业总时长 (分钟):"));
@@ -160,8 +160,8 @@ public class SimulationConfigDialog extends JDialog {
             else dto.mealPeriod = "dinner";
 
             // 业务规则校验
-            if (dto.totalTables <= 0 || dto.totalTables > 42) {
-                throw new IllegalArgumentException("桌子数量必须在 1 到 42 之间！");
+            if (dto.totalTables <= 0 || dto.totalTables > 200) {
+                throw new IllegalArgumentException("桌子数量必须在 1 到 200 之间！");
             }
             if (dto.probSolo < 0.0 || dto.probSolo > 1.0) {
                 throw new IllegalArgumentException("概率必须在 0 到 1 之间！");

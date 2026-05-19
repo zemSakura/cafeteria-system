@@ -80,19 +80,42 @@ public class QueueAreaPanel extends JPanel {
         this.repaint();
     }
 
+    /**
+     * 动态重置排队进度条的上限阈值
+     * @param maxCapacity 理论最大排队人数 (如: 总人数 / 窗口数 * 拥挤系数)
+     */
+    public void setMaxQueueCapacity(int maxCapacity) {
+        for (JProgressBar bar : queueBars) {
+            bar.setMaximum(maxCapacity);
+        }
+    }
+
+
     public void updateQueueLength(int windowIndex, int currentLength) {
         if (windowIndex >= 0 && windowIndex < queueBars.length) {
             JProgressBar bar = queueBars[windowIndex];
             bar.setValue(currentLength);
             bar.setString("排队中: " + currentLength + " 人");
 
-            // 【视觉优化 5：动态切换为赛博霓虹色】
-            if (currentLength < 10) {
-                bar.setForeground(frontend.ColorTheme.ACCENT_CYAN);   // 安全：霓虹青
-            } else if (currentLength < 20) {
-                bar.setForeground(frontend.ColorTheme.ACCENT_YELLOW); // 警告：暖黄
+            // =========================================
+            // 【视觉升级：动态相对阈值算法】
+            // 动态获取当前进度条的最大承载量（Maximum）
+            // =========================================
+            int maxCapacity = bar.getMaximum();
+
+            // 计算当前拥挤度的百分比
+            double ratio = (double) currentLength / maxCapacity;
+
+            // 根据相对比例，动态切换赛博霓虹色
+            if (ratio < 0.5) {
+                // 50% 负载以下：安全低压（霓虹青）
+                bar.setForeground(frontend.ColorTheme.ACCENT_CYAN);
+            } else if (ratio < 0.8) {
+                // 50% ~ 80% 负载：警告预压（暖黄）
+                bar.setForeground(frontend.ColorTheme.ACCENT_YELLOW);
             } else {
-                bar.setForeground(frontend.ColorTheme.ACCENT_RED);    // 拥挤：樱桃红
+                // 80% 负载以上：极度拥挤（樱桃红）
+                bar.setForeground(frontend.ColorTheme.ACCENT_RED);
             }
         }
     }

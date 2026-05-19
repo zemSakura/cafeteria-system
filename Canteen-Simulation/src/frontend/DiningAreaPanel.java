@@ -41,18 +41,76 @@ public class DiningAreaPanel extends JPanel {
         this.removeAll();
         tableSeatStates.clear();
 
-        int rows = (int) Math.round(Math.sqrt(newTableCount));
-        int cols = (int) Math.ceil((double) newTableCount / rows);
-        this.setLayout(new GridLayout(rows, cols, 15, 15));
+        // =========================================
+        // 【终极排版引擎：多目标权重评分算法】
+        // 目标 1：不滑动 (最多 5 行)
+        // 目标 2：完美矩形 (最少空位)
+        // 目标 3：桌子最大化 (比例接近屏幕 1.8)
+        // =========================================
+        int MAX_COLS = 10;         // 极限列数限制
+        int MAX_VISIBLE_ROWS = 5;  // 超过 5 行必然触发滑动窗口
+        double TARGET_RATIO = 1.8; // 最佳屏幕长宽比
+
+        int bestCols = 1;
+        int bestRows = newTableCount;
+        int minScore = Integer.MAX_VALUE;
+        double bestRatioDiff = Double.MAX_VALUE;
+
+        // 从接近正方形开始穷举，一直试到极限列数
+        int startCol = (int) Math.ceil(Math.sqrt(newTableCount));
+        for (int c = startCol; c <= MAX_COLS; c++) {
+            int r = (int) Math.ceil((double) newTableCount / c);
+
+            // 计算瑕疵 1：空位数量 (违背“尽量满足矩形”的原则)
+            int emptySlots = (r * c) - newTableCount;
+
+            // 计算瑕疵 2：滑动惩罚 (违背“尽可能不滑动”的原则)
+            int scrollPenalty = 0;
+            // 只有当总数在理论上能一屏装下时，才进行严厉惩罚
+            if (r > MAX_VISIBLE_ROWS && newTableCount <= MAX_COLS * MAX_VISIBLE_ROWS) {
+                scrollPenalty = 1000; // 只要能不滑动，就拥有一票否决权！
+            }
+
+            // 综合瑕疵得分（越低越好）
+            int totalScore = scrollPenalty + emptySlots;
+
+            // 比例差异计算（用于判断桌子大小，越接近 1.8 桌子越大）
+            double currentRatio = (double) c / r;
+            double ratioDiff = Math.abs(currentRatio - TARGET_RATIO);
+
+            // 按照你的优先级进行“王者选拔”
+            if (totalScore < minScore) {
+                // 发现更优解（更少滑动、更少空位）
+                minScore = totalScore;
+                bestCols = c;
+                bestRows = r;
+                bestRatioDiff = ratioDiff;
+            } else if (totalScore == minScore) {
+                // 如果空位一样多（比如 4x4 和 8x2 都是 0 空位），就比谁的桌子更大！
+                if (ratioDiff < bestRatioDiff) {
+                    bestCols = c;
+                    bestRows = r;
+                    bestRatioDiff = ratioDiff;
+                }
+            }
+        }
+
+        // 应用选拔出的最强王者配置
+        this.setLayout(new GridLayout(bestRows, bestCols, 15, 15));
 
         for (int i = 0; i < newTableCount; i++) {
             tableSeatStates.put(i, new int[]{-1, -1, -1, -1});
-            this.add(createSingleTable(i + 1));
+            JPanel tableWrapper = createSingleTable(i + 1);
+
+            // 赋予 85x85 保底体积，桌子少时自动拉伸变大，桌子多时死守底线并滚动
+            tableWrapper.setPreferredSize(new Dimension(85, 85));
+            this.add(tableWrapper);
         }
 
         this.revalidate();
         this.repaint();
     }
+
 
     private JPanel createSingleTable(int tableId) {
         // 优化 1：把座位间隙从 5 拉大到 8，增加呼吸感
@@ -63,11 +121,11 @@ public class DiningAreaPanel extends JPanel {
 
         // 优化 2：改造默认的文字边框，去掉那圈死板的实线，换成隐形留白！
         javax.swing.border.TitledBorder titledBorder = BorderFactory.createTitledBorder(
-                BorderFactory.createEmptyBorder(8, 0, 2, 0), // 用空气留白代替线条
+                BorderFactory.createEmptyBorder(12, 4, 4, 4), // 增加顶部空间放文字，减少左右留白
                 "桌 " + String.format("%02d", tableId)
         );
         titledBorder.setTitleColor(frontend.ColorTheme.TEXT_SECONDARY); // 让文字变成高级灰
-        titledBorder.setTitleFont(new java.awt.Font("SansSerif", java.awt.Font.PLAIN, 11));
+        //titledBorder.setTitleFont(new java.awt.Font("SansSerif", java.awt.Font.PLAIN, 11));
         tablePanel.setBorder(titledBorder);
 
         for (int j = 0; j < 4; j++) {
@@ -92,23 +150,24 @@ public class DiningAreaPanel extends JPanel {
             tablePanel.add(seat);
         }
 
+        // 包装器代码
         JPanel responsiveWrapper = new JPanel() {
             @Override
             public void doLayout() {
                 super.doLayout();
                 int w = getWidth();
                 int h = getHeight();
+                // 确保桌子在格子内既不被拉长，也不被缩得太小
                 int size = Math.min(w, h);
                 int x = (w - size) / 2;
                 int y = (h - size) / 2;
                 if (getComponentCount() > 0) {
+                    // 如果桌子数极多，这里保证它至少有 120px 的渲染大小
                     getComponent(0).setBounds(x, y, size, size);
                 }
             }
         };
-
         responsiveWrapper.setLayout(null);
-        // 记得把包装器的背景色也设为透明或底层颜色，防止露馅
         responsiveWrapper.setOpaque(false);
         responsiveWrapper.add(tablePanel);
 
@@ -146,9 +205,16 @@ public class DiningAreaPanel extends JPanel {
         for (int i = 0; i < Math.min(4, seatPanels.size()); i++) {
             JPanel seat = seatPanels.get(i);
             int groupId = states[i];
+
+            // =========================================
+            // 【UI 审美重构：回归工业大屏本质】
+            // =========================================
             if (groupId >= 0) {
-                seat.setBackground(frontend.ColorTheme.groupColor(groupId));
+                // 只要有人坐（不管是几个人结伴），统一显示为醒目的“占用红”
+                // （如果你觉得红色太刺眼，也可以改成 ColorTheme.ACCENT_BLUE 等其他主题色）
+                seat.setBackground(frontend.ColorTheme.ACCENT_RED);
             } else {
+                // 空位保持原样
                 seat.setBackground(frontend.ColorTheme.BG_ITEM);
             }
         }

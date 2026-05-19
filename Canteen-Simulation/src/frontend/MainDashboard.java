@@ -57,8 +57,10 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         // =========================================
         // 【解耦升级：仅针对“就餐区”的智能滑动包装盒】
         // =========================================
+        // =========================================
+        // 【解耦升级：仅针对“就餐区”的智能滑动包装盒】
+        // =========================================
         class DiningScrollWrapper extends JPanel implements javax.swing.Scrollable {
-            // 【防挤压底线】：如果桌子变多（比如30桌），觉得被压扁了，可以把这个值调高（如500或600）
             private final int MIN_HEIGHT = 450;
 
             public DiningScrollWrapper() {
@@ -70,20 +72,24 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
             public Dimension getPreferredSize() {
                 Dimension d = super.getPreferredSize();
                 if (getParent() instanceof javax.swing.JViewport) {
-                    // 仅缩放就餐区：视窗够大就拉伸，视窗被挤压到底线就锁死
-                    d.height = Math.max(MIN_HEIGHT, getParent().getHeight());
+                    // 取 桌子真实总高度、保底高度、屏幕高度 的最大值
+                    d.height = Math.max(d.height, Math.max(MIN_HEIGHT, getParent().getHeight()));
                 }
                 return d;
             }
 
             @Override public Dimension getPreferredScrollableViewportSize() { return getPreferredSize(); }
-            @Override public int getScrollableUnitIncrement(Rectangle r, int o, int d) { return 40; }
+            @Override public int getScrollableUnitIncrement(Rectangle r, int o, int d) { return 40; } // 滚轮速度
             @Override public int getScrollableBlockIncrement(Rectangle r, int o, int d) { return 100; }
             @Override public boolean getScrollableTracksViewportWidth() { return true; }
 
-            @Override public boolean getScrollableTracksViewportHeight() {
+            @Override
+            public boolean getScrollableTracksViewportHeight() {
+                // 【致命 Bug 修复点】
+                // 只有当桌子的真实自然高度（super.getPreferredSize().height）小于视窗高度时，才去贴合屏幕压缩。
+                // 一旦桌子变多，真实高度超过了视窗，立刻返回 false，拒绝压缩，强行撑开滚动条！
                 if (getParent() instanceof javax.swing.JViewport) {
-                    return getParent().getHeight() >= MIN_HEIGHT;
+                    return super.getPreferredSize().height <= getParent().getHeight();
                 }
                 return false;
             }
@@ -339,7 +345,18 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
 
     @Override
     public void onWindowQueueUpdated(int windowIndex, int queueLength) {
-        SwingUtilities.invokeLater(() -> myQueuePanel.updateQueueLength(windowIndex, queueLength));
+        SwingUtilities.invokeLater(() -> {
+            // 1. 更新右侧进度条的视觉 UI
+            myQueuePanel.updateQueueLength(windowIndex, queueLength);
+
+            // 2. 补全排队日志
+            // 注意：底层 index 通常从 0 开始，展示给用户时 +1 更符合人类直觉
+            String logMsg = String.format(">>> [排队] 窗口 %d 队列更新，当前等候人数: %d", windowIndex + 1, queueLength);
+
+            // 3. 复用你写好的辅助方法，保持代码整洁
+            logTextArea.append(logMsg + "\n");
+            logTextArea.setCaretPosition(logTextArea.getDocument().getLength());
+        });
     }
 
     @Override
