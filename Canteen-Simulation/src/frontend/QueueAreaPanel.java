@@ -103,19 +103,17 @@ public class QueueAreaPanel extends JPanel {
             // =========================================
             int maxCapacity = bar.getMaximum();
 
-            // 计算当前拥挤度的百分比
+            // 算出当前进度百分比
             double ratio = (double) currentLength / maxCapacity;
 
-            // 根据相对比例，动态切换赛博霓虹色
-            if (ratio < 0.5) {
-                // 50% 负载以下：安全低压（霓虹青）
-                bar.setForeground(frontend.ColorTheme.ACCENT_CYAN);
-            } else if (ratio < 0.8) {
-                // 50% ~ 80% 负载：警告预压（暖黄）
-                bar.setForeground(frontend.ColorTheme.ACCENT_YELLOW);
+            // 【视觉升级：更敏锐的焦虑阈值】
+            // 只要达到 30% 就开始黄牌警告，超过 60% 直接红牌！
+            if (ratio < 0.3) {
+                bar.setForeground(frontend.ColorTheme.ACCENT_CYAN);   // <30% 畅通
+            } else if (ratio < 0.6) {
+                bar.setForeground(frontend.ColorTheme.ACCENT_YELLOW); // 30%~60% 警告
             } else {
-                // 80% 负载以上：极度拥挤（樱桃红）
-                bar.setForeground(frontend.ColorTheme.ACCENT_RED);
+                bar.setForeground(frontend.ColorTheme.ACCENT_RED);    // >60% 极度拥挤
             }
         }
     }
