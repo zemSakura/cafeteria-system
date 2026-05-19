@@ -9,10 +9,10 @@ import backend.model.Window;
 import backend.model.WindowState;
 import frontend.SimulationEventListener;
 
-import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -29,27 +29,30 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
 
 /**
- * 正式事件驱动仿真引擎。
+ * 文件说明：排队、入座与营业信息输出的核心实现文件。
  *
- * 适配队友新版前端：桌位刷新使用 int[] seatGroupIds，前端按组颜色显示实际已入座座位。
+ * 作用定位：
+ * 1. 这是后端正式运行的事件驱动仿真引擎，负责串联“学生到达 -> 选择窗口 -> 排队 -> 打饭 -> 等座 -> 入座 -> 就餐 -> 离开”的完整流程。
+ * 2. 排队逻辑主要集中在 processArrivals、handleGroupArrival、estimateWindowWait、processServiceStarts、processServiceCompletions、updateQueueLength 等方法。
+ * 3. 入座逻辑主要集中在 trySeatWaitingGroups、reserveSeatsForGroup、seatReadyMembersAtTable、findRandomFreeTableForGroup、findSharedTableForGroup、processDiningCompletions 等方法。
+ * 4. 本文件保留队友新增的前端事件通知：学生到达、进入窗口队列、入座、离开、餐段切换都会实时通知 MainDashboard。
+ * 5. 本文件同时负责输出营业信息文件：时间线 CSV、事件 CSV、摘要 TXT、HTML 报告。运行前会清理旧的 simulation-output 报告文件，避免无用文件越积越多。
  *
- * 当前后端规则：
- * 1. 后端仿真时间单位为秒。
- * 2. 学生按到达时间进入系统。
- * 3. 同组成员到达后，每个人随机选择任意窗口排队。
- * 4. 学生完成服务后进入等座区。
- * 5. 同组中只要有人先打完饭，就可以先占座；系统会为整组锁定容量。
- * 6. 锁定容量不直接传给前端，因此提前锁定的位置不会提前标红。
- * 7. 前端只显示 Table 中真实已经入座的 seatGroupIds。
- * 8. 入座优先找能容纳整组的空桌，没有空桌时才允许拼桌。
- * 9. 同组成员全部实际入座并全部达到就餐结束时间后，整组一起离开并释放座位。
- * 10. 仿真期间每个时刻输出餐厅状态快照到 CSV 文件。
+ * 核心规则：
+ * - 后端仿真时间单位为秒。
+ * - 学生按到达时间进入系统，同组学生统一判断是否放弃排队。
+ * - 同组成员到达后，每个学生独立选择窗口排队。
+ * - 学生完成服务后进入等座区；同组中先打完饭的人可以先占座。
+ * - 一旦找到桌子，后端会为整组锁定座位容量，防止后续同组成员没有座位。
+ * - 前端只显示 Table 中真实已经入座的 seatGroupIds，锁定但未入座的位置不会提前标红。
+ * - 同组成员全部实际入座并全部达到就餐结束时间后，整组一起离开并释放座位。
  */
 public class SimulationEngine implements Runnable {
 
@@ -103,9 +106,31 @@ public class SimulationEngine implements Runnable {
     private int nextArrivalIndex = 0;
     private long currentTime = 0;
 
-    private PrintWriter reportWriter;
+    /** 对外保留一个“主报告路径”，现在指向 HTML 报告。 */
     private Path reportFilePath;
-    private boolean reportHeaderWritten = false;
+    private Path outputDir;
+    private String reportBaseName;
+    private Path timelineFilePath;
+    private Path eventsFilePath;
+    private Path summaryFilePath;
+    private Path htmlReportFilePath;
+
+    private PrintWriter timelineWriter;
+    private PrintWriter eventWriter;
+    private boolean timelineHeaderWritten = false;
+    private boolean eventHeaderWritten = false;
+
+    /** 用于最终生成摘要和 HTML 报告。 */
+    private final List<Snapshot> snapshots = new ArrayList<>();
+
+    private long[] cumulativeQueueLengthByWindow;
+    private long[] busySampleCountByWindow;
+    private long snapshotSampleCount = 0L;
+
+    private int emptyTableSeatCount = 0;
+    private int sharedTableSeatCount = 0;
+    private int seatReservationCount = 0;
+    private int groupLeaveCount = 0;
 
     public SimulationEngine(List<Student> students, SimulationEventListener listener) {
         this(students, listener, 50L, Collections.emptyList());
@@ -161,6 +186,9 @@ public class SimulationEngine implements Runnable {
         this.tableReservedOrOccupiedSeats = new HashMap<>();
         this.phaseBoundaries = new ArrayList<>(phaseBoundaries == null ? Collections.emptyList() : phaseBoundaries);
 
+        this.cumulativeQueueLengthByWindow = new long[windowStates.size()];
+        this.busySampleCountByWindow = new long[windowStates.size()];
+
         for (Student student : this.allStudents) {
             groupMembers.computeIfAbsent(student.getGroupId(), k -> new ArrayList<>()).add(student);
         }
@@ -177,7 +205,7 @@ public class SimulationEngine implements Runnable {
     @Override
     public void run() {
         try {
-            openReportWriter();
+            openReportWriters();
             checkAndBroadcastPhase();
 
             while (running) {
@@ -199,7 +227,8 @@ public class SimulationEngine implements Runnable {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } finally {
-            closeReportWriter();
+            closeReportWriters();
+            generateFinalReports();
             running = false;
             listener.onSimulationFinished();
         }
@@ -211,6 +240,8 @@ public class SimulationEngine implements Runnable {
             if (currentTime >= pb.startTick && (pb.endTick < 0 || currentTime < pb.endTick)) {
                 currentPhaseIndex = i;
                 listener.onPhaseChanged(pb.name, pb.label, currentTime);
+                writeEvent(currentTime, "PHASE_CHANGE", -1, -1, -1, -1, -1, -1, -1,
+                        "切换到餐段：" + pb.label);
                 return;
             }
             if (pb.endTick >= 0 && currentTime >= pb.endTick) {
@@ -238,6 +269,8 @@ public class SimulationEngine implements Runnable {
                 if (member.getArrivalTime() <= currentTime
                         && member.getStatus() == StudentStatus.ARRIVING) {
                     listener.onStudentArrived(member.getId(), member.getGroupId(), currentTime);
+                    writeEvent(currentTime, "ARRIVE", member.getId(), member.getGroupId(), -1, -1, -1, -1, -1,
+                            "学生到达餐厅");
                 }
             }
 
@@ -296,6 +329,8 @@ public class SimulationEngine implements Runnable {
             updatedWindows.add(windowId);
             listener.onStudentQueuedAtWindow(student.getId(), student.getGroupId(), windowId,
                     windowQueues.get(windowId).size(), currentTime);
+            writeEvent(currentTime, "QUEUE_ENTER", student.getId(), student.getGroupId(), windowId, -1, -1, -1, -1,
+                    "学生进入窗口 " + (windowId + 1) + " 排队");
         }
 
         for (Integer windowId : updatedWindows) {
@@ -327,6 +362,8 @@ public class SimulationEngine implements Runnable {
             student.setLeaveReason(reason);
             student.setLeaveTime(currentTime);
             listener.onStudentLeft(student.getId(), student.getGroupId(), -1, reason, currentTime);
+            writeEvent(currentTime, "BALK", student.getId(), student.getGroupId(), student.getFinalWindowId(), -1, -1, -1, -1,
+                    "学生放弃排队：" + reason);
         }
     }
 
@@ -353,6 +390,10 @@ public class SimulationEngine implements Runnable {
 
             servingStudents[i] = student;
             serviceEndTimes[i] = currentTime + Math.max(1, state.getWindow().getAvgServeTime());
+
+            long queueWait = Math.max(0L, currentTime - student.getQueueEnterTime());
+            writeEvent(currentTime, "SERVE_START", student.getId(), student.getGroupId(), i, -1, queueWait, -1, -1,
+                    "学生开始在窗口 " + (i + 1) + " 打饭");
 
             updateQueueLength(i);
         }
@@ -382,6 +423,11 @@ public class SimulationEngine implements Runnable {
             waitingSeatByGroup
                     .computeIfAbsent(student.getGroupId(), k -> new ArrayList<>())
                     .add(student);
+
+            long serviceDuration = Math.max(0L, currentTime - student.getServiceStartTime());
+            writeEvent(currentTime, "SERVE_END", student.getId(), student.getGroupId(), i, -1,
+                    Math.max(0L, student.getServiceStartTime() - student.getQueueEnterTime()), -1, serviceDuration,
+                    "学生打饭结束，进入等待座位状态");
         }
     }
 
@@ -411,6 +457,7 @@ public class SimulationEngine implements Runnable {
             if (tableId < 0) {
                 int groupSize = allMembers.size();
                 tableId = findRandomFreeTableForGroup(groupSize);
+                boolean assignedToEmptyTable = tableId >= 0;
                 if (tableId < 0) {
                     tableId = findSharedTableForGroup(groupSize);
                 }
@@ -418,6 +465,11 @@ public class SimulationEngine implements Runnable {
                     continue;
                 }
                 reserveSeatsForGroup(groupId, tableId, groupSize);
+                if (assignedToEmptyTable) {
+                    emptyTableSeatCount++;
+                } else {
+                    sharedTableSeatCount++;
+                }
             }
 
             seatReadyMembersAtTable(groupId, tableId, readyMembers);
@@ -437,6 +489,10 @@ public class SimulationEngine implements Runnable {
         groupAssignedTable.put(groupId, tableId);
         groupReservedSeats.put(groupId, groupSize);
         tableReservedOrOccupiedSeats.put(tableId, newReservedOrOccupied);
+        seatReservationCount++;
+
+        writeEvent(currentTime, "SEAT_RESERVE", -1, groupId, -1, tableId, -1, -1, -1,
+                "为小组 " + groupId + " 锁定桌 " + (tableId + 1) + " 的 " + groupSize + " 个座位容量");
     }
 
     private void seatReadyMembersAtTable(int groupId, int tableId, List<Student> readyMembers) {
@@ -470,6 +526,11 @@ public class SimulationEngine implements Runnable {
             seatedMembers.add(student);
             diningStudents.add(student);
             listener.onStudentSeatedAtTable(student.getId(), student.getGroupId(), tableId, currentTime);
+
+            long seatWait = Math.max(0L, currentTime - student.getServiceEndTime());
+            writeEvent(currentTime, "SEAT", student.getId(), student.getGroupId(), student.getFinalWindowId(), tableId,
+                    Math.max(0L, student.getServiceStartTime() - student.getQueueEnterTime()), seatWait, student.getDiningTime(),
+                    "学生入座桌 " + (tableId + 1));
         }
 
         listener.onTableOccupancyChanged(tableId, table.getSeatGroupIds());
@@ -573,6 +634,11 @@ public class SimulationEngine implements Runnable {
                 student.setLeaveTime(groupLeaveTime);
                 diningStudents.remove(student);
                 listener.onStudentLeft(student.getId(), student.getGroupId(), tableId, student.getLeaveReason(), groupLeaveTime);
+                writeEvent(groupLeaveTime, "LEAVE", student.getId(), student.getGroupId(), student.getFinalWindowId(), tableId,
+                        Math.max(0L, student.getServiceStartTime() - student.getQueueEnterTime()),
+                        Math.max(0L, student.getSeatAssignedTime() - student.getServiceEndTime()),
+                        Math.max(0L, student.getDiningEndTime() - student.getDiningStartTime()),
+                        "学生随小组一起离开");
             }
 
             if (tableId >= 0) {
@@ -592,6 +658,7 @@ public class SimulationEngine implements Runnable {
 
             groupAssignedTable.remove(groupId);
             groupReservedSeats.remove(groupId);
+            groupLeaveCount++;
             iterator.remove();
         }
 
@@ -651,33 +718,72 @@ public class SimulationEngine implements Runnable {
         return result;
     }
 
-    private void openReportWriter() {
+    private void openReportWriters() {
         try {
-            Path outputDir = Paths.get("simulation-output");
+            outputDir = Paths.get("simulation-output").toAbsolutePath();
             Files.createDirectories(outputDir);
+            cleanOldGeneratedReports(outputDir);
 
-            String fileName = "simulation_result_" + LocalDateTime.now().format(REPORT_TIME_FORMATTER) + ".csv";
-            reportFilePath = outputDir.resolve(fileName).toAbsolutePath();
+            reportBaseName = LocalDateTime.now().format(REPORT_TIME_FORMATTER);
+            timelineFilePath = outputDir.resolve("simulation_timeline_" + reportBaseName + ".csv");
+            eventsFilePath = outputDir.resolve("simulation_events_" + reportBaseName + ".csv");
+            summaryFilePath = outputDir.resolve("simulation_summary_" + reportBaseName + ".txt");
+            htmlReportFilePath = outputDir.resolve("simulation_report_" + reportBaseName + ".html");
+            reportFilePath = htmlReportFilePath;
 
-            BufferedWriter writer = Files.newBufferedWriter(reportFilePath, StandardCharsets.UTF_8);
-            reportWriter = new PrintWriter(writer);
-            writeReportHeader();
-            System.out.println("Simulation report file: " + reportFilePath);
+            timelineWriter = new PrintWriter(Files.newBufferedWriter(timelineFilePath, StandardCharsets.UTF_8));
+            eventWriter = new PrintWriter(Files.newBufferedWriter(eventsFilePath, StandardCharsets.UTF_8));
+
+            writeTimelineHeader();
+            writeEventHeader();
+
+            System.out.println("Simulation timeline file: " + timelineFilePath);
+            System.out.println("Simulation events file: " + eventsFilePath);
+            System.out.println("Simulation summary file: " + summaryFilePath);
+            System.out.println("Simulation HTML report: " + htmlReportFilePath);
         } catch (IOException e) {
-            reportWriter = null;
+            timelineWriter = null;
+            eventWriter = null;
             reportFilePath = null;
-            System.err.println("Failed to create simulation report file: " + e.getMessage());
+            System.err.println("Failed to create simulation report files: " + e.getMessage());
         }
     }
 
-    private void writeReportHeader() {
-        if (reportWriter == null || reportHeaderWritten) {
+    private void cleanOldGeneratedReports(Path dir) {
+        String[] patterns = {
+                "simulation_result_*.csv",
+                "simulation_timeline_*.csv",
+                "simulation_events_*.csv",
+                "simulation_summary_*.txt",
+                "simulation_report_*.html"
+        };
+
+        for (String pattern : patterns) {
+            try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir, pattern)) {
+                for (Path file : stream) {
+                    try {
+                        Files.deleteIfExists(file);
+                    } catch (IOException ignored) {
+                        // 删除失败不影响仿真运行；新报告仍会按时间戳生成。
+                    }
+                }
+            } catch (IOException ignored) {
+                // 目录不存在或遍历失败时直接跳过。
+            }
+        }
+    }
+
+    private void writeTimelineHeader() {
+        if (timelineWriter == null || timelineHeaderWritten) {
             return;
         }
 
-        reportWriter.println(
+        timelineWriter.println(
                 "timeSecond," +
+                        "timeMinute," +
                         "phase," +
+                        "totalStudents," +
+                        "notArrivedStudents," +
                         "arrivedStudents," +
                         "windowQueues," +
                         "totalQueuing," +
@@ -691,18 +797,78 @@ public class SimulationEngine implements Runnable {
                         "lockedOnlySeats," +
                         "leftNormally," +
                         "balkedStudents," +
+                        "leftNoSeatStudents," +
+                        "tableUtilization," +
+                        "reservedCapacityUtilization," +
                         "actualTableSeatGroups," +
                         "tableReservationCounts"
         );
-        reportHeaderWritten = true;
+        timelineHeaderWritten = true;
+    }
+
+    private void writeEventHeader() {
+        if (eventWriter == null || eventHeaderWritten) {
+            return;
+        }
+        eventWriter.println(
+                "timeSecond," +
+                        "timeMinute," +
+                        "eventType," +
+                        "studentId," +
+                        "groupId," +
+                        "windowId," +
+                        "tableId," +
+                        "queueWaitSecond," +
+                        "seatWaitSecond," +
+                        "durationSecond," +
+                        "description"
+        );
+        eventHeaderWritten = true;
     }
 
     private void writeCurrentSnapshot() {
-        if (reportWriter == null) {
+        Snapshot snapshot = buildCurrentSnapshot();
+        snapshots.add(snapshot);
+        updateSampleAccumulators(snapshot);
+
+        int interval = Math.max(1, CanteenConfig.SNAPSHOT_INTERVAL);
+        boolean shouldWrite = snapshot.timeSecond == 0 || snapshot.timeSecond % interval == 0 || isSimulationFinished();
+        if (timelineWriter == null || !shouldWrite) {
             return;
         }
 
+        timelineWriter.println(
+                snapshot.timeSecond + "," +
+                        formatDouble(snapshot.timeSecond / 60.0) + "," +
+                        escapeCsv(snapshot.phase) + "," +
+                        snapshot.totalStudents + "," +
+                        snapshot.notArrivedStudents + "," +
+                        snapshot.arrivedStudents + "," +
+                        escapeCsv(snapshot.windowQueues) + "," +
+                        snapshot.totalQueuing + "," +
+                        snapshot.servingStudents + "," +
+                        snapshot.waitingForSeatStudents + "," +
+                        snapshot.diningStudents + "," +
+                        snapshot.actualSeatedTables + "," +
+                        snapshot.actualSeatedSeats + "," +
+                        snapshot.reservedOrOccupiedTables + "," +
+                        snapshot.reservedOrOccupiedSeats + "," +
+                        snapshot.lockedOnlySeats + "," +
+                        snapshot.leftNormally + "," +
+                        snapshot.balkedStudents + "," +
+                        snapshot.leftNoSeatStudents + "," +
+                        formatDouble(snapshot.tableUtilization) + "," +
+                        formatDouble(snapshot.reservedCapacityUtilization) + "," +
+                        escapeCsv(snapshot.actualTableSeatGroups) + "," +
+                        escapeCsv(snapshot.tableReservationCounts)
+        );
+        timelineWriter.flush();
+    }
+
+    private Snapshot buildCurrentSnapshot() {
+        int totalStudents = allStudents.size();
         int arrivedStudents = countStudentsNotInStatus(StudentStatus.ARRIVING);
+        int notArrivedStudents = totalStudents - arrivedStudents;
         int totalQueuing = getTotalQueueLength();
         int servingCount = getServingCount();
         int waitingForSeatCount = getWaitingSeatCount();
@@ -714,35 +880,285 @@ public class SimulationEngine implements Runnable {
         int lockedOnlySeatCount = Math.max(0, reservedOrOccupiedSeatCount - actualSeatedSeatCount);
         int leftNormally = countStudentsInStatus(StudentStatus.LEFT_NORMAL);
         int balkedStudents = countStudentsInStatus(StudentStatus.BALKED);
+        int leftNoSeatStudents = countStudentsInStatus(StudentStatus.LEFT_NO_SEAT);
+        int totalSeats = tables.size() * 4;
+        double tableUtilization = totalSeats <= 0 ? 0.0 : actualSeatedSeatCount * 100.0 / totalSeats;
+        double reservedCapacityUtilization = totalSeats <= 0 ? 0.0 : reservedOrOccupiedSeatCount * 100.0 / totalSeats;
 
-        reportWriter.println(
-                currentTime + "," +
-                        escapeCsv(getCurrentPhaseName()) + "," +
-                        arrivedStudents + "," +
-                        escapeCsv(formatWindowQueues()) + "," +
-                        totalQueuing + "," +
-                        servingCount + "," +
-                        waitingForSeatCount + "," +
-                        diningCount + "," +
-                        actualSeatedTableCount + "," +
-                        actualSeatedSeatCount + "," +
-                        reservedOrOccupiedTableCount + "," +
-                        reservedOrOccupiedSeatCount + "," +
-                        lockedOnlySeatCount + "," +
-                        leftNormally + "," +
-                        balkedStudents + "," +
-                        escapeCsv(formatActualTableSeatGroups()) + "," +
-                        escapeCsv(formatTableReservationCounts())
+        return new Snapshot(
+                currentTime,
+                getCurrentPhaseName(),
+                totalStudents,
+                notArrivedStudents,
+                arrivedStudents,
+                formatWindowQueues(),
+                totalQueuing,
+                servingCount,
+                waitingForSeatCount,
+                diningCount,
+                actualSeatedTableCount,
+                actualSeatedSeatCount,
+                reservedOrOccupiedTableCount,
+                reservedOrOccupiedSeatCount,
+                lockedOnlySeatCount,
+                leftNormally,
+                balkedStudents,
+                leftNoSeatStudents,
+                tableUtilization,
+                reservedCapacityUtilization,
+                formatActualTableSeatGroups(),
+                formatTableReservationCounts()
         );
-        reportWriter.flush();
     }
 
-    private void closeReportWriter() {
-        if (reportWriter != null) {
-            reportWriter.flush();
-            reportWriter.close();
-            reportWriter = null;
+    private void updateSampleAccumulators(Snapshot snapshot) {
+        snapshotSampleCount++;
+        for (int i = 0; i < windowQueues.size(); i++) {
+            cumulativeQueueLengthByWindow[i] += windowQueues.get(i).size();
+            if (servingStudents[i] != null) {
+                busySampleCountByWindow[i]++;
+            }
         }
+    }
+
+    private void writeEvent(long timeSecond,
+                            String eventType,
+                            int studentId,
+                            int groupId,
+                            int windowId,
+                            int tableId,
+                            long queueWaitSecond,
+                            long seatWaitSecond,
+                            long durationSecond,
+                            String description) {
+        if (eventWriter == null) {
+            return;
+        }
+        eventWriter.println(
+                timeSecond + "," +
+                        formatDouble(timeSecond / 60.0) + "," +
+                        escapeCsv(eventType) + "," +
+                        emptyIfNegative(studentId) + "," +
+                        emptyIfNegative(groupId) + "," +
+                        emptyIfNegative(windowId < 0 ? -1 : windowId + 1) + "," +
+                        emptyIfNegative(tableId < 0 ? -1 : tableId + 1) + "," +
+                        emptyIfNegative(queueWaitSecond) + "," +
+                        emptyIfNegative(seatWaitSecond) + "," +
+                        emptyIfNegative(durationSecond) + "," +
+                        escapeCsv(description)
+        );
+        eventWriter.flush();
+    }
+
+    private void closeReportWriters() {
+        if (timelineWriter != null) {
+            timelineWriter.flush();
+            timelineWriter.close();
+            timelineWriter = null;
+        }
+        if (eventWriter != null) {
+            eventWriter.flush();
+            eventWriter.close();
+            eventWriter = null;
+        }
+    }
+
+    private void generateFinalReports() {
+        if (summaryFilePath == null || htmlReportFilePath == null) {
+            return;
+        }
+        SummaryStats stats = calculateSummaryStats();
+        writeSummaryReport(stats);
+        writeHtmlReport(stats);
+    }
+
+    private SummaryStats calculateSummaryStats() {
+        SummaryStats stats = new SummaryStats();
+        stats.totalStudents = allStudents.size();
+        stats.arrivedStudents = countStudentsNotInStatus(StudentStatus.ARRIVING);
+        stats.leftNormally = countStudentsInStatus(StudentStatus.LEFT_NORMAL);
+        stats.balkedStudents = countStudentsInStatus(StudentStatus.BALKED);
+        stats.leftNoSeatStudents = countStudentsInStatus(StudentStatus.LEFT_NO_SEAT);
+        stats.inSystemAtEnd = stats.totalStudents - stats.leftNormally - stats.balkedStudents - stats.leftNoSeatStudents - countStudentsInStatus(StudentStatus.ARRIVING);
+        stats.completionRate = stats.totalStudents == 0 ? 0.0 : stats.leftNormally * 100.0 / stats.totalStudents;
+        stats.balkRate = stats.totalStudents == 0 ? 0.0 : stats.balkedStudents * 100.0 / stats.totalStudents;
+
+        long queueWaitSum = 0L;
+        int queueWaitCount = 0;
+        long seatWaitSum = 0L;
+        int seatWaitCount = 0;
+        long stayTimeSum = 0L;
+        int stayTimeCount = 0;
+
+        for (Student student : allStudents) {
+            if (student.getServiceStartTime() >= 0 && student.getQueueEnterTime() >= 0) {
+                long queueWait = Math.max(0L, student.getServiceStartTime() - student.getQueueEnterTime());
+                queueWaitSum += queueWait;
+                queueWaitCount++;
+                stats.maxQueueWait = Math.max(stats.maxQueueWait, queueWait);
+            }
+            if (student.getSeatAssignedTime() >= 0 && student.getServiceEndTime() >= 0) {
+                long seatWait = Math.max(0L, student.getSeatAssignedTime() - student.getServiceEndTime());
+                seatWaitSum += seatWait;
+                seatWaitCount++;
+                stats.maxSeatWait = Math.max(stats.maxSeatWait, seatWait);
+            }
+            if (student.getLeaveTime() >= 0) {
+                long stayTime = Math.max(0L, student.getLeaveTime() - student.getArrivalTime());
+                stayTimeSum += stayTime;
+                stayTimeCount++;
+            }
+        }
+
+        stats.avgQueueWait = queueWaitCount == 0 ? 0.0 : queueWaitSum / (double) queueWaitCount;
+        stats.avgSeatWait = seatWaitCount == 0 ? 0.0 : seatWaitSum / (double) seatWaitCount;
+        stats.avgStayTime = stayTimeCount == 0 ? 0.0 : stayTimeSum / (double) stayTimeCount;
+
+        for (Snapshot snapshot : snapshots) {
+            stats.maxTotalQueuing = Math.max(stats.maxTotalQueuing, snapshot.totalQueuing);
+            stats.maxServingStudents = Math.max(stats.maxServingStudents, snapshot.servingStudents);
+            stats.maxWaitingSeatStudents = Math.max(stats.maxWaitingSeatStudents, snapshot.waitingForSeatStudents);
+            stats.maxActualSeatedSeats = Math.max(stats.maxActualSeatedSeats, snapshot.actualSeatedSeats);
+            stats.maxLockedOnlySeats = Math.max(stats.maxLockedOnlySeats, snapshot.lockedOnlySeats);
+            stats.avgTableUtilization += snapshot.tableUtilization;
+            stats.avgReservedCapacityUtilization += snapshot.reservedCapacityUtilization;
+        }
+        if (!snapshots.isEmpty()) {
+            stats.avgTableUtilization /= snapshots.size();
+            stats.avgReservedCapacityUtilization /= snapshots.size();
+        }
+
+        return stats;
+    }
+
+    private void writeSummaryReport(SummaryStats stats) {
+        try (PrintWriter writer = new PrintWriter(Files.newBufferedWriter(summaryFilePath, StandardCharsets.UTF_8))) {
+            writer.println("食堂就餐仿真系统营业摘要");
+            writer.println("========================");
+            writer.println("报告时间戳: " + reportBaseName);
+            writer.println("主报告文件: " + htmlReportFilePath);
+            writer.println();
+            writer.println("一、基础配置");
+            writer.println("总学生数: " + stats.totalStudents);
+            writer.println("桌子数量: " + tables.size());
+            writer.println("总座位数: " + (tables.size() * 4));
+            writer.println("窗口数量: " + windowStates.size());
+            writer.println("窗口平均服务时间: " + Arrays.toString(CanteenConfig.WINDOW_AVG_SERVE_TIME) + " 秒");
+            writer.println("学生耐心范围: " + formatSeconds(CanteenConfig.PATIENCE_MIN) + " - " + formatSeconds(CanteenConfig.PATIENCE_MAX));
+            writer.println("快照输出间隔: " + CanteenConfig.SNAPSHOT_INTERVAL + " 秒");
+            writer.println();
+            writer.println("二、就餐结果");
+            writer.println("已到达学生数: " + stats.arrivedStudents);
+            writer.println("正常完成就餐人数: " + stats.leftNormally);
+            writer.println("放弃排队人数: " + stats.balkedStudents);
+            writer.println("因无座离开人数: " + stats.leftNoSeatStudents);
+            writer.println("结束时仍在系统内人数: " + stats.inSystemAtEnd);
+            writer.println("完成率: " + formatPercent(stats.completionRate));
+            writer.println("放弃率: " + formatPercent(stats.balkRate));
+            writer.println();
+            writer.println("三、等待与拥堵");
+            writer.println("平均排队等待: " + formatSeconds(stats.avgQueueWait));
+            writer.println("最大排队等待: " + formatSeconds(stats.maxQueueWait));
+            writer.println("平均等座等待: " + formatSeconds(stats.avgSeatWait));
+            writer.println("最大等座等待: " + formatSeconds(stats.maxSeatWait));
+            writer.println("平均系统停留时间: " + formatSeconds(stats.avgStayTime));
+            writer.println("最大总排队人数: " + stats.maxTotalQueuing);
+            writer.println("最大等座人数: " + stats.maxWaitingSeatStudents);
+            writer.println("最大实际入座人数: " + stats.maxActualSeatedSeats);
+            writer.println("最大锁定但未实际入座座位数: " + stats.maxLockedOnlySeats);
+            writer.println();
+            writer.println("四、座位与窗口");
+            writer.println("平均桌位利用率: " + formatPercent(stats.avgTableUtilization));
+            writer.println("平均预留容量利用率: " + formatPercent(stats.avgReservedCapacityUtilization));
+            writer.println("空桌入座次数: " + emptyTableSeatCount);
+            writer.println("拼桌入座次数: " + sharedTableSeatCount);
+            writer.println("座位锁定次数: " + seatReservationCount);
+            writer.println("整组离开次数: " + groupLeaveCount);
+            writer.println();
+            writer.println("五、输出文件");
+            writer.println("时间线 CSV: " + timelineFilePath);
+            writer.println("事件 CSV: " + eventsFilePath);
+            writer.println("摘要 TXT: " + summaryFilePath);
+            writer.println("HTML 报告: " + htmlReportFilePath);
+        } catch (IOException e) {
+            System.err.println("Failed to write summary report: " + e.getMessage());
+        }
+    }
+
+    private void writeHtmlReport(SummaryStats stats) {
+        try (PrintWriter writer = new PrintWriter(Files.newBufferedWriter(htmlReportFilePath, StandardCharsets.UTF_8))) {
+            writer.println("<!DOCTYPE html>");
+            writer.println("<html lang=\"zh-CN\">");
+            writer.println("<head>");
+            writer.println("<meta charset=\"UTF-8\">");
+            writer.println("<title>食堂就餐仿真营业报告</title>");
+            writer.println("<style>");
+            writer.println("body{font-family:Arial,'Microsoft YaHei',sans-serif;margin:24px;background:#f6f7fb;color:#111827;}");
+            writer.println("h1,h2{margin:0 0 14px;} .section{background:white;border-radius:12px;padding:18px;margin:16px 0;box-shadow:0 1px 5px rgba(0,0,0,.08);}");
+            writer.println(".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;} .card{background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:12px;}");
+            writer.println(".value{font-size:24px;font-weight:700;margin-top:6px;} table{border-collapse:collapse;width:100%;} th,td{border:1px solid #e5e7eb;padding:8px;text-align:left;} th{background:#f3f4f6;}");
+            writer.println(".bar-wrap{background:#e5e7eb;border-radius:999px;height:14px;overflow:hidden;} .bar{height:14px;background:#4f46e5;} .muted{color:#6b7280;font-size:13px;}");
+            writer.println("</style>");
+            writer.println("</head><body>");
+            writer.println("<h1>食堂就餐仿真营业报告</h1>");
+            writer.println("<p class=\"muted\">生成时间戳：" + escapeHtml(reportBaseName) + "</p>");
+
+            writer.println("<div class=\"section\"><h2>结果概览</h2><div class=\"grid\">");
+            writeMetricCard(writer, "总学生数", String.valueOf(stats.totalStudents));
+            writeMetricCard(writer, "完成就餐人数", String.valueOf(stats.leftNormally));
+            writeMetricCard(writer, "完成率", formatPercent(stats.completionRate));
+            writeMetricCard(writer, "放弃排队人数", String.valueOf(stats.balkedStudents));
+            writeMetricCard(writer, "放弃率", formatPercent(stats.balkRate));
+            writeMetricCard(writer, "平均排队等待", formatSeconds(stats.avgQueueWait));
+            writeMetricCard(writer, "平均等座等待", formatSeconds(stats.avgSeatWait));
+            writeMetricCard(writer, "平均停留时间", formatSeconds(stats.avgStayTime));
+            writer.println("</div></div>");
+
+            writer.println("<div class=\"section\"><h2>关键拥堵指标</h2>");
+            writer.println("<table><tr><th>指标</th><th>数值</th></tr>");
+            writeTableRow(writer, "最大总排队人数", String.valueOf(stats.maxTotalQueuing));
+            writeTableRow(writer, "最大窗口服务中人数", String.valueOf(stats.maxServingStudents));
+            writeTableRow(writer, "最大等座人数", String.valueOf(stats.maxWaitingSeatStudents));
+            writeTableRow(writer, "最大实际入座人数", String.valueOf(stats.maxActualSeatedSeats));
+            writeTableRow(writer, "最大锁定但未入座座位数", String.valueOf(stats.maxLockedOnlySeats));
+            writeTableRow(writer, "平均桌位利用率", formatPercent(stats.avgTableUtilization));
+            writeTableRow(writer, "平均预留容量利用率", formatPercent(stats.avgReservedCapacityUtilization));
+            writer.println("</table></div>");
+
+            writer.println("<div class=\"section\"><h2>窗口统计</h2>");
+            writer.println("<table><tr><th>窗口</th><th>累计服务人数</th><th>最大队列长度</th><th>平均队列长度</th><th>忙碌采样占比</th></tr>");
+            for (int i = 0; i < windowStates.size(); i++) {
+                WindowState state = windowStates.get(i);
+                double avgQueue = snapshotSampleCount == 0 ? 0.0 : cumulativeQueueLengthByWindow[i] / (double) snapshotSampleCount;
+                double busyRate = snapshotSampleCount == 0 ? 0.0 : busySampleCountByWindow[i] * 100.0 / snapshotSampleCount;
+                writer.println("<tr><td>窗口 " + (i + 1) + "</td><td>" + state.getServedCount() + "</td><td>" + state.getMaxQueueLength() + "</td><td>" + formatDouble(avgQueue) + "</td><td>" + formatPercent(busyRate) + "</td></tr>");
+            }
+            writer.println("</table></div>");
+
+            writer.println("<div class=\"section\"><h2>完成率条形图</h2>");
+            writer.println("<p>完成率</p><div class=\"bar-wrap\"><div class=\"bar\" style=\"width:" + Math.min(100.0, stats.completionRate) + "%\"></div></div>");
+            writer.println("<p>放弃率</p><div class=\"bar-wrap\"><div class=\"bar\" style=\"width:" + Math.min(100.0, stats.balkRate) + "%;background:#dc2626\"></div></div>");
+            writer.println("</div>");
+
+            writer.println("<div class=\"section\"><h2>输出文件</h2><table><tr><th>文件</th><th>路径</th></tr>");
+            writeTableRow(writer, "时间线 CSV", String.valueOf(timelineFilePath));
+            writeTableRow(writer, "事件 CSV", String.valueOf(eventsFilePath));
+            writeTableRow(writer, "摘要 TXT", String.valueOf(summaryFilePath));
+            writeTableRow(writer, "HTML 报告", String.valueOf(htmlReportFilePath));
+            writer.println("</table></div>");
+
+            writer.println("</body></html>");
+        } catch (IOException e) {
+            System.err.println("Failed to write HTML report: " + e.getMessage());
+        }
+    }
+
+    private void writeMetricCard(PrintWriter writer, String label, String value) {
+        writer.println("<div class=\"card\"><div>" + escapeHtml(label) + "</div><div class=\"value\">" + escapeHtml(value) + "</div></div>");
+    }
+
+    private void writeTableRow(PrintWriter writer, String key, String value) {
+        writer.println("<tr><td>" + escapeHtml(key) + "</td><td>" + escapeHtml(value) + "</td></tr>");
     }
 
     private int countStudentsInStatus(StudentStatus status) {
@@ -878,5 +1294,137 @@ public class SimulationEngine implements Runnable {
         }
         String escaped = value.replace("\"", "\"\"");
         return "\"" + escaped + "\"";
+    }
+
+    private String escapeHtml(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;");
+    }
+
+    private String emptyIfNegative(long value) {
+        return value < 0 ? "" : String.valueOf(value);
+    }
+
+    private String formatDouble(double value) {
+        return String.format(Locale.US, "%.2f", value);
+    }
+
+    private String formatPercent(double value) {
+        return formatDouble(value) + "%";
+    }
+
+    private String formatSeconds(double seconds) {
+        return formatSeconds(Math.round(seconds));
+    }
+
+    private String formatSeconds(long seconds) {
+        if (seconds < 0) {
+            return "-";
+        }
+        long minutes = seconds / 60;
+        long remainingSeconds = seconds % 60;
+        if (minutes <= 0) {
+            return remainingSeconds + " 秒";
+        }
+        return minutes + " 分 " + remainingSeconds + " 秒";
+    }
+
+    private static class Snapshot {
+        final long timeSecond;
+        final String phase;
+        final int totalStudents;
+        final int notArrivedStudents;
+        final int arrivedStudents;
+        final String windowQueues;
+        final int totalQueuing;
+        final int servingStudents;
+        final int waitingForSeatStudents;
+        final int diningStudents;
+        final int actualSeatedTables;
+        final int actualSeatedSeats;
+        final int reservedOrOccupiedTables;
+        final int reservedOrOccupiedSeats;
+        final int lockedOnlySeats;
+        final int leftNormally;
+        final int balkedStudents;
+        final int leftNoSeatStudents;
+        final double tableUtilization;
+        final double reservedCapacityUtilization;
+        final String actualTableSeatGroups;
+        final String tableReservationCounts;
+
+        Snapshot(long timeSecond,
+                 String phase,
+                 int totalStudents,
+                 int notArrivedStudents,
+                 int arrivedStudents,
+                 String windowQueues,
+                 int totalQueuing,
+                 int servingStudents,
+                 int waitingForSeatStudents,
+                 int diningStudents,
+                 int actualSeatedTables,
+                 int actualSeatedSeats,
+                 int reservedOrOccupiedTables,
+                 int reservedOrOccupiedSeats,
+                 int lockedOnlySeats,
+                 int leftNormally,
+                 int balkedStudents,
+                 int leftNoSeatStudents,
+                 double tableUtilization,
+                 double reservedCapacityUtilization,
+                 String actualTableSeatGroups,
+                 String tableReservationCounts) {
+            this.timeSecond = timeSecond;
+            this.phase = phase;
+            this.totalStudents = totalStudents;
+            this.notArrivedStudents = notArrivedStudents;
+            this.arrivedStudents = arrivedStudents;
+            this.windowQueues = windowQueues;
+            this.totalQueuing = totalQueuing;
+            this.servingStudents = servingStudents;
+            this.waitingForSeatStudents = waitingForSeatStudents;
+            this.diningStudents = diningStudents;
+            this.actualSeatedTables = actualSeatedTables;
+            this.actualSeatedSeats = actualSeatedSeats;
+            this.reservedOrOccupiedTables = reservedOrOccupiedTables;
+            this.reservedOrOccupiedSeats = reservedOrOccupiedSeats;
+            this.lockedOnlySeats = lockedOnlySeats;
+            this.leftNormally = leftNormally;
+            this.balkedStudents = balkedStudents;
+            this.leftNoSeatStudents = leftNoSeatStudents;
+            this.tableUtilization = tableUtilization;
+            this.reservedCapacityUtilization = reservedCapacityUtilization;
+            this.actualTableSeatGroups = actualTableSeatGroups;
+            this.tableReservationCounts = tableReservationCounts;
+        }
+    }
+
+    private static class SummaryStats {
+        int totalStudents;
+        int arrivedStudents;
+        int leftNormally;
+        int balkedStudents;
+        int leftNoSeatStudents;
+        int inSystemAtEnd;
+        double completionRate;
+        double balkRate;
+        double avgQueueWait;
+        long maxQueueWait;
+        double avgSeatWait;
+        long maxSeatWait;
+        double avgStayTime;
+        int maxTotalQueuing;
+        int maxServingStudents;
+        int maxWaitingSeatStudents;
+        int maxActualSeatedSeats;
+        int maxLockedOnlySeats;
+        double avgTableUtilization;
+        double avgReservedCapacityUtilization;
     }
 }
