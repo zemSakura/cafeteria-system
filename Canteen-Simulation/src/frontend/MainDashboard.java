@@ -208,6 +208,19 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
                 myDiningPanel.updateTableCount(dto.totalTables);
                 myQueuePanel.updateWindowCount(dto.windowCount);
 
+                // =========================================
+                // 【核心闭环：物理常识与动态波动的结合】
+                // =========================================
+                // 假设最高峰只有 5%~10% 的学生同时处于“正在排队”状态
+                int peakFactor = (int) (dto.totalStudents * 0.08);
+                int calculatedMax = Math.max(20, peakFactor / dto.windowCount);
+
+                // 【关键防御】：强制物理封顶！一个窗口最多容忍 120 人排队，再多就爆表了
+                int maxQueuePerWindow = Math.min(120, calculatedMax);
+
+                myQueuePanel.setMaxQueueCapacity(maxQueuePerWindow);
+                // =========================================
+
                 logTextArea.setText("");
                 phaseLabel.setText(" ");
                 appendLog(">>> 初始化配置注入成功！桌数: " + dto.totalTables + " | 窗口: " + dto.windowCount);
