@@ -62,8 +62,8 @@ public class CanteenConfig {
     /**
      * Unit: second. Students tolerate about 15-30 minutes of queueing.
      */
-    public static final int DEFAULT_PATIENCE_MIN = 15 * 60;
-    public static final int DEFAULT_PATIENCE_MAX = 30 * 60;
+    public static final int DEFAULT_PATIENCE_MIN = 20 * 60;
+    public static final int DEFAULT_PATIENCE_MAX = 45 * 60;
 
     public static final double DEFAULT_PROB_SOLO = 0.7;
     public static final double DEFAULT_PROB_DUO = 0.2;
