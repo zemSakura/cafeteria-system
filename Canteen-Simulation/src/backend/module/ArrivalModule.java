@@ -32,7 +32,7 @@ import java.util.concurrent.BlockingQueue;
  * 2. Generate exactly the requested number of students for each selected meal period.
  * 3. Allocate arrivals on the configured time range by a truncated Gaussian distribution.
  *    The frontend openDuration is in minutes; generated arrivalTime is in seconds.
- * 4. Keep group sizes limited to 1, 2 and 4.
+ * 4. Keep group sizes limited to 1, 2, 3 and 4.
  * 5. Provide visualization data for frontend charts.
  *
  * This module does not operate Swing UI components and does not execute queueing
@@ -472,7 +472,7 @@ public class ArrivalModule {
             return chooseBetweenSoloAndDuo();
         }
         if (remaining == 3) {
-            return chooseBetweenSoloAndDuo();
+            return chooseSizeForThree();
         }
 
         return determineGroupSize();
@@ -486,6 +486,24 @@ public class ArrivalModule {
             return 1;
         }
         return random.nextDouble() < solo / sum ? 1 : 2;
+    }
+
+    private int chooseSizeForThree() {
+        double solo = Math.max(0.0, CanteenConfig.PROB_SOLO);
+        double duo = Math.max(0.0, CanteenConfig.PROB_DUO);
+        double trio = Math.max(0.0, CanteenConfig.PROB_TRIO);
+        double sum = solo + duo + trio;
+        if (sum <= 0.0) {
+            return 1;
+        }
+        double r = random.nextDouble() * sum;
+        if (r < solo) {
+            return 1;
+        }
+        if (r < solo + duo) {
+            return 2;
+        }
+        return 3;
     }
 
     private int sampleTruncatedGaussianMinute(int startMinute,
@@ -549,6 +567,10 @@ public class ArrivalModule {
 
         if (r < CanteenConfig.PROB_SOLO + CanteenConfig.PROB_DUO) {
             return 2;
+        }
+
+        if (r < CanteenConfig.PROB_SOLO + CanteenConfig.PROB_DUO + CanteenConfig.PROB_TRIO) {
+            return 3;
         }
 
         return 4;

@@ -237,7 +237,7 @@ public class SimulationEngine implements Runnable {
             for (Student member : members) {
                 if (member.getArrivalTime() <= currentTime
                         && member.getStatus() == StudentStatus.ARRIVING) {
-                    listener.onStudentArrived(member.getId(), currentTime);
+                    listener.onStudentArrived(member.getId(), member.getGroupId(), currentTime);
                 }
             }
 
@@ -294,6 +294,8 @@ public class SimulationEngine implements Runnable {
             student.setStatus(StudentStatus.QUEUING);
             windowQueues.get(windowId).offerLast(student);
             updatedWindows.add(windowId);
+            listener.onStudentQueuedAtWindow(student.getId(), student.getGroupId(), windowId,
+                    windowQueues.get(windowId).size(), currentTime);
         }
 
         for (Integer windowId : updatedWindows) {
@@ -324,6 +326,7 @@ public class SimulationEngine implements Runnable {
             student.setStatus(StudentStatus.BALKED);
             student.setLeaveReason(reason);
             student.setLeaveTime(currentTime);
+            listener.onStudentLeft(student.getId(), student.getGroupId(), -1, reason, currentTime);
         }
     }
 
@@ -466,6 +469,7 @@ public class SimulationEngine implements Runnable {
 
             seatedMembers.add(student);
             diningStudents.add(student);
+            listener.onStudentSeatedAtTable(student.getId(), student.getGroupId(), tableId, currentTime);
         }
 
         listener.onTableOccupancyChanged(tableId, table.getSeatGroupIds());
@@ -568,6 +572,7 @@ public class SimulationEngine implements Runnable {
                 student.setLeaveReason("正常就餐结束");
                 student.setLeaveTime(groupLeaveTime);
                 diningStudents.remove(student);
+                listener.onStudentLeft(student.getId(), student.getGroupId(), tableId, student.getLeaveReason(), groupLeaveTime);
             }
 
             if (tableId >= 0) {

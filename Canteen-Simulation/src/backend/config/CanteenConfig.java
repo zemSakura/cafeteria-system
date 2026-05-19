@@ -66,7 +66,8 @@ public class CanteenConfig {
     public static final int DEFAULT_PATIENCE_MAX = 30 * 60;
 
     public static final double DEFAULT_PROB_SOLO = 0.7;
-    public static final double DEFAULT_PROB_DUO = 0.2;
+    public static final double DEFAULT_PROB_DUO = 0.15;
+    public static final double DEFAULT_PROB_TRIO = 0.05;
     public static final double DEFAULT_PROB_TEAM = 0.1;
 
     public static final int DEFAULT_TOTAL_POPULATION = 1000;
@@ -114,6 +115,7 @@ public class CanteenConfig {
 
     public static double PROB_SOLO = DEFAULT_PROB_SOLO;
     public static double PROB_DUO = DEFAULT_PROB_DUO;
+    public static double PROB_TRIO = DEFAULT_PROB_TRIO;
     public static double PROB_TEAM = DEFAULT_PROB_TEAM;
 
     public static int TOTAL_POPULATION = DEFAULT_TOTAL_POPULATION;
@@ -222,6 +224,7 @@ public class CanteenConfig {
 
         PROB_SOLO = request.getProbSolo();
         PROB_DUO = request.getProbDuo();
+        PROB_TRIO = request.getProbTrio();
         PROB_TEAM = request.getProbTeam();
 
         TOTAL_POPULATION = request.getTotalPopulation();
@@ -255,6 +258,7 @@ public class CanteenConfig {
 
         PROB_SOLO = DEFAULT_PROB_SOLO;
         PROB_DUO = DEFAULT_PROB_DUO;
+        PROB_TRIO = DEFAULT_PROB_TRIO;
         PROB_TEAM = DEFAULT_PROB_TEAM;
 
         TOTAL_POPULATION = DEFAULT_TOTAL_POPULATION;
@@ -322,7 +326,7 @@ public class CanteenConfig {
             throw new IllegalArgumentException("invalid dining time config");
         }
 
-        double groupProbabilitySum = PROB_SOLO + PROB_DUO + PROB_TEAM;
+        double groupProbabilitySum = PROB_SOLO + PROB_DUO + PROB_TRIO + PROB_TEAM;
         if (Math.abs(groupProbabilitySum - 1.0) > 1e-9) {
             throw new IllegalArgumentException("group probabilities must sum to 1.0, current: " + groupProbabilitySum);
         }
@@ -383,6 +387,7 @@ public class CanteenConfig {
                 ", PATIENCE_MAX_SECONDS=" + PATIENCE_MAX +
                 ", PROB_SOLO=" + PROB_SOLO +
                 ", PROB_DUO=" + PROB_DUO +
+                ", PROB_TRIO=" + PROB_TRIO +
                 ", PROB_TEAM=" + PROB_TEAM +
                 ", TOTAL_POPULATION=" + TOTAL_POPULATION +
                 ", SIMULATION_MODE=" + SIMULATION_MODE +

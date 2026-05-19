@@ -25,6 +25,8 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
 
     private static JTextArea logTextArea;
     private static javax.swing.Timer delayTimer;
+    /** 当前餐段的起始秒数（分钟-of-day * 60），用于将仿真 tick 转为自然时间 */
+    private static long timeBaseSeconds = 0;
 
     public static void main(String[] args) {
         FlatDarkLaf.setup();
@@ -182,18 +184,19 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
                 // =========================================
                 // 【智能概率分配算法】：绝对无损的浮点数分配法
                 // =========================================
-                double solo = dto.probSolo; // 比如界面传过来 0.7 或 0.8
+                double solo = dto.probSolo;
                 request.setProbSolo(solo);
 
-                // 算出剩余的结伴概率池 (比如 1.0 - 0.8 = 0.2)
                 double remainder = 1.0 - solo;
 
-                // 假设在结伴的人中，双人占 70%，三人及以上团队占 30%
-                double duo = remainder * 0.7;
+                // 结伴中：双人 50%，三人 30%，四人 20%
+                double duo = remainder * 0.5;
                 request.setProbDuo(duo);
 
-                // 【终极防御】：最后一个 team 概率直接用 1.0 减去前两个，彻底斩断精度丢失！
-                double team = 1.0 - solo - duo;
+                double trio = remainder * 0.3;
+                request.setProbTrio(trio);
+
+                double team = 1.0 - solo - duo - trio;
                 request.setProbTeam(team);
                 // =========================================
 
@@ -315,8 +318,9 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
 
         CanteenConfig.PROB_SOLO = dto.probSolo;
         double remain = 1.0 - dto.probSolo;
-        CanteenConfig.PROB_DUO = remain * 2.0 / 3.0;
-        CanteenConfig.PROB_TEAM = remain / 3.0;
+        CanteenConfig.PROB_DUO = remain * 0.5;
+        CanteenConfig.PROB_TRIO = remain * 0.3;
+        CanteenConfig.PROB_TEAM = 1.0 - dto.probSolo - CanteenConfig.PROB_DUO - CanteenConfig.PROB_TRIO;
 
         CanteenConfig.validate();
     }
@@ -341,6 +345,14 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         return panel;
     }
 
+    private static String formatTime(long elapsedSeconds) {
+        long total = timeBaseSeconds + elapsedSeconds;
+        long hh = (total / 3600) % 24;
+        long mm = (total % 3600) / 60;
+        long ss = total % 60;
+        return String.format("%02d:%02d:%02d", hh, mm, ss);
+    }
+
     private static void appendLog(String msg) {
         SwingUtilities.invokeLater(() -> {
             logTextArea.append(msg + "\n");
@@ -349,27 +361,25 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
     }
 
     @Override
-    public void onStudentArrived(int studentId, long time) {
+    public void onStudentArrived(int studentId, int groupId, long time) {
         SwingUtilities.invokeLater(() -> {
-            logTextArea.append(String.format(">>> [%03d] 学生 %03d 抵达食堂%n", time, studentId));
+            logTextArea.append(String.format(">>> [%s] 学生 %03d（组 %d）抵达食堂%n", formatTime(time), studentId, groupId));
+            logTextArea.setCaretPosition(logTextArea.getDocument().getLength());
+        });
+    }
+
+    @Override
+    public void onStudentQueuedAtWindow(int studentId, int groupId, int windowIndex, int queueLength, long time) {
+        SwingUtilities.invokeLater(() -> {
+            logTextArea.append(String.format(">>> [%s] 学生 %03d（组 %d）到窗口 %d 排队打饭（当前等候: %d人）%n",
+                    formatTime(time), studentId, groupId, windowIndex + 1, queueLength));
             logTextArea.setCaretPosition(logTextArea.getDocument().getLength());
         });
     }
 
     @Override
     public void onWindowQueueUpdated(int windowIndex, int queueLength) {
-        SwingUtilities.invokeLater(() -> {
-            // 1. 更新右侧进度条的视觉 UI
-            myQueuePanel.updateQueueLength(windowIndex, queueLength);
-
-            // 2. 补全排队日志
-            // 注意：底层 index 通常从 0 开始，展示给用户时 +1 更符合人类直觉
-            String logMsg = String.format(">>> [排队] 窗口 %d 队列更新，当前等候人数: %d", windowIndex + 1, queueLength);
-
-            // 3. 复用你写好的辅助方法，保持代码整洁
-            logTextArea.append(logMsg + "\n");
-            logTextArea.setCaretPosition(logTextArea.getDocument().getLength());
-        });
+        SwingUtilities.invokeLater(() -> myQueuePanel.updateQueueLength(windowIndex, queueLength));
     }
 
     @Override
@@ -390,8 +400,35 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
     }
 
     @Override
+    public void onStudentSeatedAtTable(int studentId, int groupId, int tableIndex, long time) {
+        SwingUtilities.invokeLater(() -> {
+            logTextArea.append(String.format(">>> [%s] 学生 %03d（组 %d）在桌 %02d 入座就餐%n", formatTime(time), studentId, groupId, tableIndex + 1));
+            logTextArea.setCaretPosition(logTextArea.getDocument().getLength());
+        });
+    }
+
+    @Override
+    public void onStudentLeft(int studentId, int groupId, int tableIndex, String reason, long time) {
+        SwingUtilities.invokeLater(() -> {
+            if (tableIndex >= 0) {
+                logTextArea.append(String.format(">>> [%s] 学生 %03d（组 %d）离开桌 %02d（%s）%n", formatTime(time), studentId, groupId, tableIndex + 1, reason));
+            } else {
+                logTextArea.append(String.format(">>> [%s] 学生 %03d（组 %d）放弃离开（%s）%n", formatTime(time), studentId, groupId, reason));
+            }
+            logTextArea.setCaretPosition(logTextArea.getDocument().getLength());
+        });
+    }
+
+    @Override
     public void onPhaseChanged(String phaseName, String label, long currentTime) {
         SwingUtilities.invokeLater(() -> {
+            // 根据餐段名称设置自然时间基准
+            switch (phaseName) {
+                case "早餐": timeBaseSeconds =  6 * 3600L + 30 * 60; break;  // 06:30
+                case "午餐": timeBaseSeconds = 11 * 3600L;            break;  // 11:00
+                case "晚餐": timeBaseSeconds = 17 * 3600L;            break;  // 17:00
+                default:     timeBaseSeconds = 0;                     break;
+            }
             Color phaseColor;
             switch (phaseName) {
                 case "早餐":   phaseColor = ColorTheme.ACCENT_CYAN;   break;
@@ -402,7 +439,7 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
             }
             phaseLabel.setText(" ● " + label);
             phaseLabel.setForeground(phaseColor);
-            appendLog(">>> [阶段] " + label + " (t=" + currentTime + ")");
+            appendLog(">>> [阶段] " + label + " (" + formatTime(currentTime) + ")");
         });
     }
 

@@ -25,6 +25,7 @@ public class SimulationConfigRequest {
 
     private double probSolo;
     private double probDuo;
+    private double probTrio;
     private double probTeam;
 
     private int totalPopulation;
@@ -51,6 +52,7 @@ public class SimulationConfigRequest {
 
         this.probSolo = CanteenConfig.DEFAULT_PROB_SOLO;
         this.probDuo = CanteenConfig.DEFAULT_PROB_DUO;
+        this.probTrio = CanteenConfig.DEFAULT_PROB_TRIO;
         this.probTeam = CanteenConfig.DEFAULT_PROB_TEAM;
 
         this.totalPopulation = CanteenConfig.DEFAULT_TOTAL_POPULATION;
@@ -160,6 +162,14 @@ public class SimulationConfigRequest {
 
     public void setProbDuo(double probDuo) {
         this.probDuo = probDuo;
+    }
+
+    public double getProbTrio() {
+        return probTrio;
+    }
+
+    public void setProbTrio(double probTrio) {
+        this.probTrio = probTrio;
     }
 
     public double getProbTeam() {
