@@ -31,3 +31,5 @@ bin/
 *.tar
 *.gz
 *.rar
+# Generated simulation reports
+simulation-output/

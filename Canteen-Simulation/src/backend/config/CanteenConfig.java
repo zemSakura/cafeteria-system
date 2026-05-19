@@ -60,10 +60,11 @@ public class CanteenConfig {
     public static final int DEFAULT_MIN_DINING_TIME = 5 * 60;
 
     /**
-     * Unit: second. Students tolerate about 15-30 minutes of queueing.
+     * Unit: second. Students tolerate about 20-45 minutes of queueing.
+     * This range keeps the default 1000-student scenario from becoming an unrealistically severe abandonment case.
      */
-    public static final int DEFAULT_PATIENCE_MIN = 15 * 60;
-    public static final int DEFAULT_PATIENCE_MAX = 30 * 60;
+    public static final int DEFAULT_PATIENCE_MIN = 20 * 60;
+    public static final int DEFAULT_PATIENCE_MAX = 45 * 60;
 
     public static final double DEFAULT_PROB_SOLO = 0.7;
     public static final double DEFAULT_PROB_DUO = 0.15;
