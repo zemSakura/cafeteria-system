@@ -1,0 +1,332 @@
+食堂仿真系统 - 自动寻优后端改造总结
+生成说明：本文件用于记录本次后端自动寻优层改造内容，便于后续展示、答辩和交接。
+
+一、改造目标
+
+本次改造没有推翻原有仿真内核，而是在现有 ArrivalModule 和 SimulationEngine 的基础上新增了一层自动寻优后端能力。
+
+系统现在可以在不启动前端 UI 的情况下，批量尝试不同的窗口数和桌子数配置，对每组参数重复运行多次仿真，并根据等待时间、排队长度、资源利用率、完成率、放弃率和资源成本等指标计算综合 Loss，最终自动推荐一组较优参数。
+
+二、核心设计
+
+新增包：
+
+backend.optimize
+
+主要调用链：
+
+OptimizeMain
+  -> GridSearchOptimizer
+    -> SimulationAdapter
+      -> CanteenConfig
+      -> ArrivalModule
+      -> SimulationEngine
+    -> ResultAverager
+    -> LossEvaluator
+  -> OptimizationCsvExporter
+
+GridSearchOptimizer 负责遍历参数空间、重复仿真、记录最优结果。
+SimulationAdapter 负责把优化参数注入原有仿真系统，并同步运行无头仿真。
+LossEvaluator 负责计算综合 Loss。
+ResultAverager 负责对同一组参数的多次仿真结果取平均。
+OptimizationCsvExporter 负责导出优化结果和回放数据。
+
+三、新增文件
+
+新增目录：
+
+Canteen-Simulation/src/backend/optimize/
+
+新增类：
+
+1. OptimizeConfig.java
+   自动寻优配置，包括窗口数范围、桌子数范围、重复次数、随机种子、TopK 数量、是否导出 CSV、是否运行回放等。
+
+2. LossConfig.java
+   Loss 计算配置，包括成本权重、等待时间权重、排队权重、放弃率权重、利用率权重，以及归一化基准。
+
+3. SimRunOptions.java
+   单次仿真运行选项，支持 normal、optimize、replay 三种模式。
+
+4. SimRunResult.java
+   优化层单次或平均仿真结果，用于排序、展示、CSV 导出和前端图表。
+
+5. OptimizeResult.java
+   优化任务总结果，包括 bestResult、allResults、topKResults、replayResult 等。
+
+6. SimulationAdapter.java
+   优化层和原仿真内核之间的适配器，负责设置配置、运行 ArrivalModule 和 SimulationEngine，并转换统计结果。
+
+7. LossEvaluator.java
+   综合 Loss 计算器。
+
+8. ResultAverager.java
+   同一组参数重复仿真后的平均器。
+
+9. GridSearchOptimizer.java
+   网格搜索优化器。
+
+10. OptimizationCsvExporter.java
+    CSV 导出器。
+
+11. ReplaySnapshot.java
+    最优方案回放中的单个时间点快照。
+
+12. ReplayResult.java
+    最优方案回放结果。
+
+13. ReplayRecorder.java
+    回放快照记录器。
+
+14. OptimizeMain.java
+    后端命令行演示入口。
+
+四、修改的已有文件
+
+1. CanteenConfig.java
+
+新增能力：
+
+- 动态设置窗口数：
+  setWindowCount(int count)
+
+- 动态设置桌子数：
+  setTableCount(int count)
+
+- 新增无头运行相关开关：
+  HEADLESS_MODE
+  CSV_ENABLED
+  LISTENER_ENABLED
+  REPLAY_RECORD_ENABLED
+  REPLAY_SNAPSHOT_INTERVAL_SECONDS
+
+- 新增配置快照和恢复：
+  snapshot()
+  restore(CanteenConfigSnapshot snapshot)
+
+用途：
+优化器每跑一组参数前会临时修改全局配置，仿真结束后恢复原配置，避免污染原前端仿真功能。
+
+2. SimulationEngine.java
+
+新增能力：
+
+- 支持 headless 模式。
+- 优化模式下跳过 Thread.sleep。
+- 优化模式下关闭前端 listener 回调。
+- 优化模式下默认不写每 tick 仿真 CSV。
+- 每 tick 采样队列长度、座位占用、窗口忙碌情况。
+- 运行结束后生成 StatisticsResult。
+- 支持 ReplayRecorder 记录最优方案回放快照。
+
+保留能力：
+
+- 原来的前端实时仿真入口仍然可用。
+- 原来的 listener 回调逻辑仍然保留。
+- 原来的 CSV 输出逻辑仍然保留，只是在优化模式下默认关闭。
+
+3. StatisticsResult.java
+
+补充指标：
+
+- windowCount
+- tableCount
+- totalStudents
+- arrivedStudents
+- servedStudents
+- abandonedStudents
+- finishedStudents
+- avgWaitTimeSeconds
+- avgWaitTimeMinutes
+- maxQueueLength
+- avgQueueLength
+- seatUtilization
+- windowUtilization
+- finishRate
+- abandonRate
+- runtimeMs
+
+4. .gitignore
+
+新增忽略目录：
+
+optimization-output/
+
+原因：
+优化结果 CSV 是运行产物，不建议提交到 Git。
+
+五、Loss 计算逻辑
+
+Loss 不直接把成本、等待时间和队列长度相加，而是先归一化，再加权求和。
+
+当前主要考虑：
+
+1. 成本
+   窗口数和桌子数越多，成本越高。
+
+2. 平均等待时间
+   等待时间越短越好。
+
+3. 最大排队人数
+   峰值排队越低越好。
+
+4. 放弃率
+   放弃就餐人数比例越低越好。
+
+5. 座位利用率
+   希望接近目标利用率，太低代表资源浪费，太高代表拥挤。
+
+6. 完成率惩罚
+   如果完成率低于最低可接受值，会额外增加惩罚。
+
+六、重复仿真取平均
+
+同一组参数会重复仿真多次。
+
+例如：
+
+窗口数 = 4
+桌子数 = 80
+repeatTimes = 2
+
+系统会使用不同随机种子运行两次仿真，然后对结果取平均。
+
+不同随机种子会导致学生到达时间、分组、耐心值、窗口选择等随机因素发生变化，因此同一组参数的多次仿真结果可能不同。
+
+取平均的目的：
+
+- 降低随机波动影响。
+- 避免某组参数因为一次随机运气好而被误判为最优。
+- 避免某组参数因为一次随机特别拥堵而被误判为很差。
+
+七、控制台运行方式
+
+默认第一阶段演示范围：
+
+窗口数：3 到 6
+桌子数：80 到 100
+repeatTimes：2
+
+运行命令：
+
+java -cp out\production\cafeteria-system backend.optimize.OptimizeMain
+
+也可以通过参数指定范围：
+
+java -cp out\production\cafeteria-system backend.optimize.OptimizeMain --minWindow=3 --maxWindow=5 --minTable=80 --maxTable=85 --repeat=2 --replay=true --exportCsv=true
+
+常用参数：
+
+--minWindow=3
+--maxWindow=10
+--minTable=60
+--maxTable=180
+--repeat=5
+--seed=20260525
+--topK=10
+--replay=true
+--exportCsv=true
+
+八、控制台输出内容
+
+运行过程中每组参数会输出：
+
+- step
+- window
+- table
+- wait
+- maxQ
+- seatUse
+- abandon
+- loss
+- best
+
+运行结束后会输出：
+
+- 推荐窗口数
+- 推荐桌子数
+- 平均等待时间
+- 最大排队人数
+- 平均排队长度
+- 座位利用率
+- 窗口利用率
+- 完成率
+- 放弃率
+- 综合 Loss
+- Top 候选方案
+- 总候选配置数
+- 总仿真次数
+- 总运行耗时
+- 最优方案回放快照数量
+
+九、CSV 输出文件
+
+输出目录：
+
+optimization-output/
+
+文件：
+
+1. optimization_result.csv
+   保存所有参数组合的结果。
+   可用于绘制 Loss 变化曲线、当前最优 Loss 收敛曲线、窗口数 × 桌子数热力图。
+
+2. top_k_result.csv
+   保存 Loss 最低的 TopK 候选方案。
+   可用于展示推荐方案排名表。
+
+3. best_replay.csv
+   保存最优方案重新运行后的时间序列快照。
+   可用于未来前端做最优方案过程回放。
+
+十、未来前端可展示内容
+
+1. 最优推荐参数卡片
+   数据来源：OptimizeResult.bestResult
+
+2. Loss 变化曲线
+   数据来源：OptimizeResult.allResults 中的 step 和 loss
+
+3. 当前最优 Loss 收敛曲线
+   数据来源：OptimizeResult.allResults 中的 step 和 currentBestLoss
+
+4. 窗口数 × 桌子数参数热力图
+   数据来源：OptimizeResult.allResults 中的 windowCount、tableCount、loss
+
+5. Top 候选方案表
+   数据来源：OptimizeResult.topKResults
+
+6. 最优方案回放
+   数据来源：OptimizeResult.replayResult.snapshots 或 best_replay.csv
+
+十一、已验证效果
+
+已完成后端目标编译验证。
+
+由于命令行全项目编译缺少既有前端 FlatLaf 依赖，完整前端编译仍需要 IntelliJ 或补充对应 jar/classpath；这不是本次后端改造引入的问题。
+
+已运行后端演示命令：
+
+java -cp out\production\cafeteria-system backend.optimize.OptimizeMain --minWindow=3 --maxWindow=5 --minTable=80 --maxTable=85 --repeat=2 --replay=true --exportCsv=true
+
+演示结果摘要：
+
+候选参数数量：18
+总仿真次数：36
+推荐窗口数：4
+推荐桌子数：80
+平均等待时间：4.36 分钟
+最大排队人数：70
+平均排队长度：21.00
+座位利用率：0.27
+窗口利用率：0.51
+完成率：0.71
+放弃率：0.29
+综合 Loss：1.4051
+最优方案回放快照数量：143
+
+十二、答辩描述建议
+
+可以这样描述本次后端架构：
+
+我们没有推翻原有食堂仿真内核，而是在原有 ArrivalModule 和 SimulationEngine 的基础上增加了自动寻优调度层。优化器通过无头模式反复调用原仿真模块，对不同窗口数和桌子数配置进行批量仿真，并收集平均等待时间、最大排队人数、座位利用率、窗口利用率、完成率、放弃率等指标。随后系统通过归一化 Loss 函数综合衡量成本与体验，自动选出最优推荐方案。为了支持后续可视化展示，后端还保留了全过程 allResults 数据，用于绘制 Loss 曲线、当前最优收敛曲线和参数热力图，并在最优参数确定后重新运行一次回放仿真，生成时间序列快照数据。

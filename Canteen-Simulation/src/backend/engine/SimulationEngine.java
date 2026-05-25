@@ -2,11 +2,14 @@ package backend.engine;
 
 import backend.config.CanteenConfig;
 import backend.model.ArrivalGenerationResult;
+import backend.model.StatisticsResult;
 import backend.model.Student;
 import backend.model.StudentStatus;
 import backend.model.Table;
 import backend.model.Window;
 import backend.model.WindowState;
+import backend.optimize.ReplayRecorder;
+import backend.optimize.ReplaySnapshot;
 import frontend.SimulationEventListener;
 
 import java.io.IOException;
@@ -31,7 +34,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
 
@@ -57,6 +59,39 @@ import java.util.Set;
 public class SimulationEngine implements Runnable {
 
     private static final DateTimeFormatter REPORT_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
+    private static final SimulationEventListener NO_OP_LISTENER = new SimulationEventListener() {
+        @Override
+        public void onStudentArrived(int studentId, int groupId, long time) {
+        }
+
+        @Override
+        public void onStudentQueuedAtWindow(int studentId, int groupId, int windowIndex, int queueLength, long time) {
+        }
+
+        @Override
+        public void onWindowQueueUpdated(int windowIndex, int queueLength) {
+        }
+
+        @Override
+        public void onTableOccupancyChanged(int tableIndex, int[] seatGroupIds) {
+        }
+
+        @Override
+        public void onStudentSeatedAtTable(int studentId, int groupId, int tableIndex, long time) {
+        }
+
+        @Override
+        public void onStudentLeft(int studentId, int groupId, int tableIndex, String reason, long time) {
+        }
+
+        @Override
+        public void onPhaseChanged(String phaseName, String phaseLabel, long currentTime) {
+        }
+
+        @Override
+        public void onSimulationFinished() {
+        }
+    };
 
     private final List<Student> allStudents;
     private final SimulationEventListener listener;
@@ -132,6 +167,21 @@ public class SimulationEngine implements Runnable {
     private int seatReservationCount = 0;
     private int groupLeaveCount = 0;
 
+    private final StatisticsResult statisticsResult = new StatisticsResult();
+
+    /** Added for backend auto-optimization: tick-level samples for aggregate metrics. */
+    private long queueLengthSum = 0L;
+    private long queueSampleCount = 0L;
+    private long occupiedSeatsSum = 0L;
+    private long seatSampleCount = 0L;
+    private long busyWindowSum = 0L;
+    private long windowSampleCount = 0L;
+    private int maxTotalQueueLength = 0;
+    private long runStartWallMs = 0L;
+
+    /** Added for backend auto-optimization replay data. */
+    private ReplayRecorder replayRecorder;
+
     public SimulationEngine(List<Student> students, SimulationEventListener listener) {
         this(students, listener, 50L, Collections.emptyList());
     }
@@ -146,7 +196,7 @@ public class SimulationEngine implements Runnable {
                             SimulationEventListener listener,
                             long timeScaleMillis,
                             List<ArrivalGenerationResult.PhaseBoundary> phaseBoundaries) {
-        this.listener = Objects.requireNonNull(listener, "listener 不能为空");
+        this.listener = listener == null || !CanteenConfig.LISTENER_ENABLED ? NO_OP_LISTENER : listener;
 
         this.allStudents = new ArrayList<>();
         if (students != null) {
@@ -202,10 +252,22 @@ public class SimulationEngine implements Runnable {
         return reportFilePath;
     }
 
+    public StatisticsResult getStatisticsResult() {
+        return statisticsResult;
+    }
+
+    /** Added for backend auto-optimization: attach an optional recorder for best-plan replay. */
+    public void setReplayRecorder(ReplayRecorder replayRecorder) {
+        this.replayRecorder = replayRecorder;
+    }
+
     @Override
     public void run() {
         try {
-            openReportWriters();
+            runStartWallMs = System.currentTimeMillis();
+            if (CanteenConfig.CSV_ENABLED) {
+                openReportWriters();
+            }
             checkAndBroadcastPhase();
 
             while (running) {
@@ -214,21 +276,30 @@ public class SimulationEngine implements Runnable {
                 trySeatWaitingGroups();
                 processArrivals();
                 processServiceStarts();
-                writeCurrentSnapshot();
+                sampleCurrentState();
+                if (CanteenConfig.CSV_ENABLED) {
+                    writeCurrentSnapshot();
+                }
+                recordReplaySnapshotIfNeeded();
 
                 if (isSimulationFinished()) {
                     break;
                 }
 
-                Thread.sleep(timeScaleMillis);
+                if (!CanteenConfig.HEADLESS_MODE) {
+                    Thread.sleep(timeScaleMillis);
+                }
                 currentTime++;
                 checkAndBroadcastPhase();
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } finally {
+            finalizeStatistics();
             closeReportWriters();
-            generateFinalReports();
+            if (CanteenConfig.CSV_ENABLED) {
+                generateFinalReports();
+            }
             running = false;
             listener.onSimulationFinished();
         }
@@ -718,7 +789,93 @@ public class SimulationEngine implements Runnable {
         return result;
     }
 
+    /** Added for backend auto-optimization: collect aggregate samples without requiring CSV output. */
+    private void sampleCurrentState() {
+        int totalQueueLength = getTotalQueueLength();
+        queueLengthSum += totalQueueLength;
+        queueSampleCount++;
+        maxTotalQueueLength = Math.max(maxTotalQueueLength, totalQueueLength);
+
+        occupiedSeatsSum += getActualSeatedSeatCount();
+        seatSampleCount++;
+
+        busyWindowSum += getBusyWindowCount();
+        windowSampleCount++;
+    }
+
+    private void recordReplaySnapshotIfNeeded() {
+        if (CanteenConfig.REPLAY_RECORD_ENABLED && replayRecorder != null) {
+            replayRecorder.tryRecord((int) currentTime, buildReplaySnapshot());
+        }
+    }
+
+    private ReplaySnapshot buildReplaySnapshot() {
+        ReplaySnapshot snapshot = new ReplaySnapshot();
+        snapshot.timeSecond = (int) currentTime;
+        snapshot.timeMinute = currentTime / 60.0;
+        snapshot.totalQueueLength = getTotalQueueLength();
+        snapshot.windowQueueLengths = getWindowQueueLengths();
+        snapshot.busyWindowCount = getBusyWindowCount();
+        snapshot.totalWindowCount = windowStates.size();
+        snapshot.occupiedSeats = getActualSeatedSeatCount();
+        snapshot.totalSeats = getTotalSeatCount();
+        snapshot.emptySeats = Math.max(0, snapshot.totalSeats - snapshot.occupiedSeats);
+        snapshot.diningStudents = diningStudents.size();
+        snapshot.arrivedStudents = countStudentsNotInStatus(StudentStatus.ARRIVING);
+        snapshot.servedStudents = countServedStudents();
+        snapshot.finishedStudents = countStudentsInStatus(StudentStatus.LEFT_NORMAL);
+        snapshot.abandonedStudents = countAbandonedStudents();
+        return snapshot;
+    }
+
+    /** Added for backend auto-optimization: produce final statistics for adapters and loss evaluation. */
+    private void finalizeStatistics() {
+        int totalStudents = allStudents.size();
+        int arrivedStudents = countStudentsNotInStatus(StudentStatus.ARRIVING);
+        int servedStudents = countServedStudents();
+        int finishedStudents = countStudentsInStatus(StudentStatus.LEFT_NORMAL);
+        int abandonedStudents = countAbandonedStudents();
+
+        double totalWait = 0.0;
+        int waitCount = 0;
+        for (Student student : allStudents) {
+            long waitTime = student.getWaitTime();
+            if (waitTime >= 0) {
+                totalWait += waitTime;
+                waitCount++;
+            }
+        }
+        double avgWaitSeconds = waitCount == 0 ? 0.0 : totalWait / waitCount;
+        double avgQueueLength = queueSampleCount == 0 ? 0.0 : queueLengthSum * 1.0 / queueSampleCount;
+        double seatUtilization = seatSampleCount == 0 || getTotalSeatCount() == 0
+                ? 0.0
+                : occupiedSeatsSum * 1.0 / (seatSampleCount * getTotalSeatCount());
+        double windowUtilization = windowSampleCount == 0 || windowStates.isEmpty()
+                ? 0.0
+                : busyWindowSum * 1.0 / (windowSampleCount * windowStates.size());
+
+        statisticsResult.setWindowCount(windowStates.size());
+        statisticsResult.setTableCount(tables.size());
+        statisticsResult.setTotalStudents(totalStudents);
+        statisticsResult.setArrivedStudents(arrivedStudents);
+        statisticsResult.setServedStudents(servedStudents);
+        statisticsResult.setFinishedStudents(finishedStudents);
+        statisticsResult.setAbandonedStudents(abandonedStudents);
+        statisticsResult.setAvgWaitTimeSeconds(avgWaitSeconds);
+        statisticsResult.setAvgWaitTimeMinutes(avgWaitSeconds / 60.0);
+        statisticsResult.setMaxQueueLength(maxTotalQueueLength);
+        statisticsResult.setAvgQueueLength(avgQueueLength);
+        statisticsResult.setSeatUtilization(seatUtilization);
+        statisticsResult.setWindowUtilization(windowUtilization);
+        statisticsResult.setFinishRate(totalStudents == 0 ? 0.0 : finishedStudents * 1.0 / totalStudents);
+        statisticsResult.setAbandonRate(totalStudents == 0 ? 0.0 : abandonedStudents * 1.0 / totalStudents);
+        statisticsResult.setRuntimeMs(runStartWallMs == 0L ? 0L : System.currentTimeMillis() - runStartWallMs);
+    }
+
     private void openReportWriters() {
+        if (!CanteenConfig.CSV_ENABLED) {
+            return;
+        }
         try {
             outputDir = Paths.get("simulation-output").toAbsolutePath();
             Files.createDirectories(outputDir);
@@ -1181,6 +1338,26 @@ public class SimulationEngine implements Runnable {
         return count;
     }
 
+    private int countServedStudents() {
+        int count = 0;
+        for (Student student : allStudents) {
+            if (student.getServiceEndTime() >= 0) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private int countAbandonedStudents() {
+        int count = 0;
+        for (Student student : allStudents) {
+            if (student.getStatus() == StudentStatus.BALKED || student.getStatus() == StudentStatus.LEFT_NO_SEAT) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     private int getTotalQueueLength() {
         int total = 0;
         for (Deque<Student> queue : windowQueues) {
@@ -1189,10 +1366,28 @@ public class SimulationEngine implements Runnable {
         return total;
     }
 
+    private int[] getWindowQueueLengths() {
+        int[] lengths = new int[windowQueues.size()];
+        for (int i = 0; i < windowQueues.size(); i++) {
+            lengths[i] = windowQueues.get(i).size();
+        }
+        return lengths;
+    }
+
     private int getServingCount() {
         int count = 0;
         for (Student student : servingStudents) {
             if (student != null) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private int getBusyWindowCount() {
+        int count = 0;
+        for (WindowState state : windowStates) {
+            if (state.isBusy()) {
                 count++;
             }
         }
@@ -1213,6 +1408,22 @@ public class SimulationEngine implements Runnable {
             if (table.getOccupiedSeatCount() > 0) {
                 count++;
             }
+        }
+        return count;
+    }
+
+    private int getActualSeatedSeatCount() {
+        int count = 0;
+        for (Table table : tables) {
+            count += table.getOccupiedSeatCount();
+        }
+        return count;
+    }
+
+    private int getTotalSeatCount() {
+        int count = 0;
+        for (Table table : tables) {
+            count += table.getCapacity();
         }
         return count;
     }

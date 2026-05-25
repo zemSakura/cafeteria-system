@@ -1,0 +1,598 @@
+食堂仿真系统 - 自动寻优前端交接细则与建议
+生成说明：本文件面向前端同学，说明后端自动寻优能力如何接入、展示和扩展。
+
+一、前端接入目标
+
+后端已经完成自动寻优能力，前端后续需要把这套能力做成可视化操作界面。
+
+建议前端最终支持：
+
+1. 用户输入优化参数
+   - 窗口数范围
+   - 桌子数范围
+   - 每组参数重复仿真次数
+   - 随机种子
+   - TopK 数量
+   - 是否生成最优方案回放
+
+2. 启动后端优化任务
+   - 无头运行，不弹出原实时仿真 UI
+   - 优化过程中展示进度
+   - 优化结束后展示推荐结果
+
+3. 展示优化结果
+   - 最优推荐参数卡片
+   - Loss 变化曲线
+   - 当前最优 Loss 收敛曲线
+   - 窗口数 × 桌子数 Loss 热力图
+   - TopK 候选方案表
+   - 最优方案回放时间序列
+
+二、后端入口
+
+当前后端命令行入口：
+
+backend.optimize.OptimizeMain
+
+示例命令：
+
+java -cp out\production\cafeteria-system backend.optimize.OptimizeMain --minWindow=3 --maxWindow=5 --minTable=80 --maxTable=85 --repeat=2 --replay=true --exportCsv=true
+
+OptimizeMain 支持的命令行参数：
+
+--minWindow=3
+--maxWindow=10
+--minTable=60
+--maxTable=180
+--repeat=5
+--seed=20260525
+--topK=10
+--replay=true
+--exportCsv=true
+
+注意：
+当前还是本地 Java 后端入口，不是 HTTP API。
+如果前端仍是 Swing，可以直接在 Java 进程内调用 GridSearchOptimizer。
+如果未来做 Web 前端，建议再包一层 Controller 或轻量 HTTP 服务。
+
+三、推荐前端调用方式
+
+方案 A：Swing 前端直接调用 Java 类
+
+适用场景：
+当前项目仍然是 Swing 桌面应用。
+
+建议新增一个“自动寻优”页面或弹窗。
+
+调用方式：
+
+OptimizeConfig optimizeConfig = new OptimizeConfig();
+optimizeConfig.minWindowCount = 用户输入;
+optimizeConfig.maxWindowCount = 用户输入;
+optimizeConfig.minTableCount = 用户输入;
+optimizeConfig.maxTableCount = 用户输入;
+optimizeConfig.repeatTimes = 用户输入;
+optimizeConfig.baseRandomSeed = 用户输入;
+optimizeConfig.topK = 用户输入;
+optimizeConfig.runReplayAfterOptimization = true;
+optimizeConfig.exportCsv = true;
+
+LossConfig lossConfig = new LossConfig();
+
+GridSearchOptimizer optimizer = new GridSearchOptimizer();
+OptimizeResult result = optimizer.run(optimizeConfig, lossConfig);
+
+然后用 result 中的数据刷新界面。
+
+注意：
+不要在 Swing EDT 线程里直接运行优化任务。
+优化过程可能耗时，应放到 SwingWorker 或后台线程中执行。
+
+方案 B：Web 前端通过后端 API 调用
+
+适用场景：
+未来改造成 Web 项目。
+
+建议后端新增 API：
+
+POST /api/optimize/start
+GET  /api/optimize/progress/{taskId}
+GET  /api/optimize/result/{taskId}
+GET  /api/optimize/replay/{taskId}
+
+当前后端已有核心类，不需要重写仿真逻辑，只需要在 API 层调用 GridSearchOptimizer。
+
+四、核心结果对象
+
+后端返回的总结果对象：
+
+backend.optimize.OptimizeResult
+
+重要字段：
+
+1. bestResult
+   最优推荐方案。
+
+2. allResults
+   所有参数组合的结果列表。
+   用于 Loss 曲线、收敛曲线、热力图。
+
+3. topKResults
+   Loss 最低的若干个候选方案。
+
+4. replayResult
+   最优方案回放数据。
+
+5. totalRuntimeMs
+   总运行耗时。
+
+6. totalCandidateCount
+   候选参数组合数量。
+
+7. totalSimulationCount
+   实际仿真次数。
+   计算方式：候选参数组合数量 × repeatTimes。
+
+五、SimRunResult 字段说明
+
+SimRunResult 是每组参数的聚合结果。
+
+字段：
+
+step
+  搜索过程中的步骤序号。
+
+windowCount
+  窗口数量。
+
+tableCount
+  桌子数量。
+
+totalStudents
+  总学生数。
+
+arrivedStudents
+  已到达学生数。
+
+servedStudents
+  已完成打饭服务人数。
+
+abandonedStudents
+  放弃就餐人数。
+
+finishedStudents
+  正常完成就餐人数。
+
+avgWaitTimeSeconds
+  平均等待时间，单位秒。
+
+avgWaitTimeMinutes
+  平均等待时间，单位分钟，前端展示优先用这个。
+
+maxQueueLength
+  仿真过程中的最大总排队人数。
+
+avgQueueLength
+  仿真过程中的平均队列长度。
+
+seatUtilization
+  座位利用率，0 到 1 之间。
+
+windowUtilization
+  窗口利用率，0 到 1 之间。
+
+finishRate
+  完成率，0 到 1 之间。
+
+abandonRate
+  放弃率，0 到 1 之间。
+
+loss
+  当前方案综合 Loss，越低越好。
+
+currentBestLoss
+  截止当前 step 的最优 Loss。
+
+runtimeMs
+  当前参数组合的平均运行耗时，单位毫秒。
+
+randomSeed
+  随机种子。
+
+mealMode
+  餐段模式信息。
+
+六、推荐页面结构
+
+建议新增页面名称：
+
+自动寻优
+
+页面可以分为五块。
+
+1. 参数设置区
+
+控件建议：
+
+- 窗口数范围：两个数字输入框
+- 桌子数范围：两个数字输入框
+- 重复次数 repeatTimes：数字输入框
+- 随机种子：数字输入框
+- TopK：数字输入框
+- 是否生成回放：复选框
+- 开始优化按钮
+- 停止按钮或取消按钮，第二阶段再做
+
+默认值建议：
+
+窗口数：3 到 6
+桌子数：80 到 100
+repeatTimes：2
+TopK：10
+生成回放：true
+
+2. 优化进度区
+
+展示：
+
+- 当前 step / totalCandidateCount
+- 当前窗口数
+- 当前桌子数
+- 当前 Loss
+- 当前最优 Loss
+- 总运行耗时
+
+如果第一版后端同步运行暂时没有进度回调，可以先在优化结束后一次性展示结果。
+后续可以给 GridSearchOptimizer 增加 progress listener。
+
+3. 最优推荐卡片
+
+展示 bestResult：
+
+- 推荐窗口数
+- 推荐桌子数
+- 平均等待时间
+- 最大排队人数
+- 平均排队长度
+- 座位利用率
+- 窗口利用率
+- 完成率
+- 放弃率
+- 综合 Loss
+
+展示格式建议：
+
+平均等待时间：保留 2 位小数，单位分钟。
+利用率、完成率、放弃率：转成百分比，保留 1 到 2 位小数。
+Loss：保留 4 位小数。
+
+4. 图表区
+
+建议图表：
+
+- Loss 变化曲线
+  x = step
+  y = loss
+  数据来源 = allResults
+
+- 当前最优 Loss 收敛曲线
+  x = step
+  y = currentBestLoss
+  数据来源 = allResults
+
+- 窗口数 × 桌子数热力图
+  x = tableCount
+  y = windowCount
+  color = loss
+  数据来源 = allResults
+
+热力图颜色建议：
+
+低 Loss 用绿色或蓝色，高 Loss 用橙色或红色。
+需要在图例说明：Loss 越低代表综合效果越好。
+
+5. TopK 表格区
+
+展示 topKResults。
+
+列建议：
+
+- 排名
+- 窗口数
+- 桌子数
+- 平均等待时间
+- 最大排队人数
+- 座位利用率
+- 窗口利用率
+- 完成率
+- 放弃率
+- Loss
+
+建议默认按 Loss 升序。
+
+七、最优方案回放展示
+
+后端回放数据：
+
+OptimizeResult.replayResult.snapshots
+
+或 CSV：
+
+optimization-output/best_replay.csv
+
+ReplaySnapshot 字段：
+
+timeSecond
+  仿真秒数。
+
+timeMinute
+  仿真分钟数。
+
+totalQueueLength
+  当前总排队人数。
+
+windowQueueLengths
+  每个窗口当前排队人数数组。
+
+busyWindowCount
+  忙碌窗口数量。
+
+totalWindowCount
+  总窗口数量。
+
+occupiedSeats
+  已占用座位数。
+
+totalSeats
+  总座位数。
+
+emptySeats
+  空座位数。
+
+diningStudents
+  当前正在就餐人数。
+
+arrivedStudents
+  已到达人数。
+
+servedStudents
+  已完成服务人数。
+
+finishedStudents
+  已完成就餐人数。
+
+abandonedStudents
+  已放弃人数。
+
+回放界面建议：
+
+- 时间轴滑块
+- 播放 / 暂停按钮
+- 当前时间点指标卡片
+- 每个窗口队列柱状图
+- 座位占用率曲线
+- 已完成 / 已放弃人数曲线
+
+第一版可以先做静态图表，不必做动画。
+
+八、CSV 文件说明
+
+后端导出目录：
+
+optimization-output/
+
+1. optimization_result.csv
+
+用途：
+展示所有参数组合。
+
+行数：
+等于候选参数组合数量 + 1 个表头。
+
+例如：
+窗口 3 到 5，桌子 80 到 85：
+候选数 = 3 × 6 = 18。
+CSV 总行数 = 19。
+
+2. top_k_result.csv
+
+用途：
+展示 TopK 推荐方案。
+
+3. best_replay.csv
+
+用途：
+展示最优方案时间序列回放。
+
+九、重要注意事项
+
+1. 不要在 UI 主线程运行优化任务
+
+优化器会循环运行多次仿真。
+如果在 Swing EDT 线程中直接执行，会导致界面卡死。
+
+建议：
+使用 SwingWorker 或后台线程。
+
+2. 第一版不要开太大范围
+
+推荐默认：
+
+窗口数：3 到 6
+桌子数：80 到 100
+repeatTimes：2
+
+等确认交互、图表、导出都正常后，再扩大：
+
+窗口数：3 到 10
+桌子数：60 到 180
+repeatTimes：5 或 10
+
+3. 当前优化器是单线程
+
+原因：
+CanteenConfig 仍然是全局静态配置。
+如果并行跑多个候选方案，会互相污染参数。
+
+前端不要尝试同时启动多个优化任务。
+
+4. 优化任务运行时不要同时启动普通实时仿真
+
+原因同上：
+优化器会临时修改 CanteenConfig。
+
+虽然后端每次 runOnce 后会 restore 配置，但同一时刻并行运行仍然不安全。
+
+5. Loss 越低越好
+
+前端文案需要明确：
+Loss 是综合成本和体验的指标，不是单纯等待时间。
+
+低 Loss 代表综合表现更优，但不一定每个单项指标都最优。
+
+6. 利用率显示要转百分比
+
+后端返回：
+0.27
+
+前端建议显示：
+27.00%
+
+7. 当前 bestResult 是基于平均结果
+
+同一组参数会重复仿真多次。
+bestResult 不是某一次仿真的结果，而是多次仿真的平均结果。
+
+十、建议新增后端进度回调
+
+如果前端需要实时进度条，建议后端下一步给 GridSearchOptimizer 增加监听器。
+
+建议接口：
+
+public interface OptimizeProgressListener {
+    void onStepFinished(int step, int total, SimRunResult result);
+    void onBestUpdated(SimRunResult bestResult);
+    void onFinished(OptimizeResult result);
+}
+
+GridSearchOptimizer 可以在每个候选方案结束后回调。
+
+Swing 前端收到回调后，需要用 SwingUtilities.invokeLater 更新 UI。
+
+十一、建议新增 JSON 导出
+
+当前后端已经能导出 CSV。
+如果未来要做 Web 前端，建议增加 JSON 导出或直接返回对象。
+
+建议 JSON 结构：
+
+{
+  "bestResult": {},
+  "allResults": [],
+  "topKResults": [],
+  "replayResult": {
+    "windowCount": 4,
+    "tableCount": 80,
+    "snapshots": []
+  },
+  "totalRuntimeMs": 473,
+  "totalCandidateCount": 18,
+  "totalSimulationCount": 36
+}
+
+十二、建议的前端文案
+
+按钮：
+
+开始寻优
+停止
+导出结果
+查看回放
+
+卡片标题：
+
+最优推荐方案
+综合 Loss
+平均等待时间
+最大排队人数
+座位利用率
+窗口利用率
+完成率
+放弃率
+
+图表标题：
+
+Loss 变化曲线
+当前最优 Loss 收敛曲线
+参数热力图
+Top 候选方案
+最优方案回放
+
+提示文案：
+
+Loss 越低表示综合表现越好。
+每组参数会重复仿真多次并取平均，以降低随机波动影响。
+优化期间请勿同时启动普通实时仿真。
+
+十三、前端第一阶段开发建议
+
+第一阶段不要做太复杂。
+
+建议优先完成：
+
+1. 参数输入表单。
+2. 点击按钮后后台运行 OptimizeMain 或 GridSearchOptimizer。
+3. 优化结束后展示 bestResult。
+4. 展示 topKResults 表格。
+5. 读取 optimization_result.csv 画 Loss 曲线。
+6. 读取 best_replay.csv 画简单回放曲线。
+
+第二阶段再做：
+
+1. 实时进度条。
+2. 优化过程实时刷新曲线。
+3. 热力图。
+4. 回放动画。
+5. Loss 权重自定义面板。
+
+十四、Loss 权重自定义建议
+
+如果前端要开放 Loss 权重设置，可以对应 LossConfig：
+
+costWeight
+waitWeight
+queueWeight
+abandonWeight
+utilizationWeight
+
+建议 UI：
+
+- 成本权重：滑块或数字输入
+- 等待时间权重：滑块或数字输入
+- 排队长度权重：滑块或数字输入
+- 放弃率权重：滑块或数字输入
+- 利用率权重：滑块或数字输入
+
+注意：
+五个权重之和不一定必须等于 1。
+后端 LossConfig.validate() 会自动归一化。
+
+十五、和原实时仿真界面的关系
+
+原来的实时仿真界面仍然保留。
+
+建议前端把系统分成两个入口：
+
+1. 实时仿真
+   用于观察单次仿真的动态过程。
+
+2. 自动寻优
+   用于批量搜索最优窗口数和桌子数。
+
+两者不要同时运行。
+
+自动寻优得到 bestResult 后，可以提供一个按钮：
+
+用推荐参数启动实时仿真
+
+该按钮可以把 bestResult.windowCount 和 bestResult.tableCount 写入原仿真配置，再启动原来的实时仿真界面。

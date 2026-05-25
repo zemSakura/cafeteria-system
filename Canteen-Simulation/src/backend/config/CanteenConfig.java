@@ -104,6 +104,13 @@ public class CanteenConfig {
     public static int SNAPSHOT_INTERVAL = DEFAULT_SNAPSHOT_INTERVAL;
     public static long RANDOM_SEED = DEFAULT_RANDOM_SEED;
 
+    /** Added for backend auto-optimization: disable UI pacing and side effects when running headless. */
+    public static boolean HEADLESS_MODE = false;
+    public static boolean CSV_ENABLED = true;
+    public static boolean LISTENER_ENABLED = true;
+    public static boolean REPLAY_RECORD_ENABLED = false;
+    public static int REPLAY_SNAPSHOT_INTERVAL_SECONDS = 60;
+
     public static int[] WINDOW_DISTANCES = DEFAULT_WINDOW_DISTANCES.clone();
     public static int[] WINDOW_AVG_SERVE_TIME = DEFAULT_WINDOW_AVG_SERVE_TIME.clone();
 
@@ -144,6 +151,20 @@ public class CanteenConfig {
 
     public static int getWindowCount() {
         return WINDOW_DISTANCES.length;
+    }
+
+    /** Added for backend auto-optimization: dynamically change the number of service windows. */
+    public static synchronized void setWindowCount(int count) {
+        initWindowsConfig(count);
+    }
+
+    /** Added for backend auto-optimization: dynamically change the number of dining tables. */
+    public static synchronized void setTableCount(int count) {
+        if (count <= 0) {
+            throw new IllegalArgumentException("table count must be greater than 0");
+        }
+        TOTAL_TABLES = count;
+        validate();
     }
 
     public static synchronized void initWindowsConfig(int windowCount) {
@@ -244,8 +265,15 @@ public class CanteenConfig {
     public static synchronized void resetToDefaults() {
         TOTAL_TABLES = DEFAULT_TOTAL_TABLES;
         OPEN_DURATION = DEFAULT_OPEN_DURATION;
+        MEAL_GAP_TICKS = DEFAULT_MEAL_GAP_TICKS;
         SNAPSHOT_INTERVAL = DEFAULT_SNAPSHOT_INTERVAL;
         RANDOM_SEED = DEFAULT_RANDOM_SEED;
+
+        HEADLESS_MODE = false;
+        CSV_ENABLED = true;
+        LISTENER_ENABLED = true;
+        REPLAY_RECORD_ENABLED = false;
+        REPLAY_SNAPSHOT_INTERVAL_SECONDS = 60;
 
         WINDOW_DISTANCES = DEFAULT_WINDOW_DISTANCES.clone();
         WINDOW_AVG_SERVE_TIME = DEFAULT_WINDOW_AVG_SERVE_TIME.clone();
@@ -372,6 +400,98 @@ public class CanteenConfig {
         }
     }
 
+    /** Added for backend auto-optimization: capture all static runtime config before a headless run. */
+    public static synchronized CanteenConfigSnapshot snapshot() {
+        CanteenConfigSnapshot snapshot = new CanteenConfigSnapshot();
+        snapshot.totalTables = TOTAL_TABLES;
+        snapshot.openDuration = OPEN_DURATION;
+        snapshot.mealGapTicks = MEAL_GAP_TICKS;
+        snapshot.snapshotInterval = SNAPSHOT_INTERVAL;
+        snapshot.randomSeed = RANDOM_SEED;
+        snapshot.headlessMode = HEADLESS_MODE;
+        snapshot.csvEnabled = CSV_ENABLED;
+        snapshot.listenerEnabled = LISTENER_ENABLED;
+        snapshot.replayRecordEnabled = REPLAY_RECORD_ENABLED;
+        snapshot.replaySnapshotIntervalSeconds = REPLAY_SNAPSHOT_INTERVAL_SECONDS;
+        snapshot.windowDistances = WINDOW_DISTANCES.clone();
+        snapshot.windowAvgServeTime = WINDOW_AVG_SERVE_TIME.clone();
+        snapshot.diningTimeMean = DINING_TIME_MEAN;
+        snapshot.diningTimeStd = DINING_TIME_STD;
+        snapshot.minDiningTime = MIN_DINING_TIME;
+        snapshot.patienceMin = PATIENCE_MIN;
+        snapshot.patienceMax = PATIENCE_MAX;
+        snapshot.probSolo = PROB_SOLO;
+        snapshot.probDuo = PROB_DUO;
+        snapshot.probTrio = PROB_TRIO;
+        snapshot.probTeam = PROB_TEAM;
+        snapshot.totalPopulation = TOTAL_POPULATION;
+        snapshot.simulationMode = SIMULATION_MODE;
+        snapshot.mealPeriod = MEAL_PERIOD;
+        snapshot.breakfastBaseRate = BREAKFAST_BASE_RATE;
+        snapshot.earlyClassRatio = EARLY_CLASS_RATIO;
+        snapshot.breakfastSkipRate = BREAKFAST_SKIP_RATE;
+        snapshot.earlyClassBreakfastBoost = EARLY_CLASS_BREAKFAST_BOOST;
+        snapshot.lunchBaseRate = LUNCH_BASE_RATE;
+        snapshot.takeoutRateAtLunch = TAKEOUT_RATE_AT_LUNCH;
+        snapshot.lunchBatchWeights = LUNCH_BATCH_WEIGHTS.clone();
+        snapshot.lunchReleaseTimes = LUNCH_RELEASE_TIMES.clone();
+        snapshot.lunchPeakDelayMeans = LUNCH_PEAK_DELAY_MEANS.clone();
+        snapshot.dinnerBaseRate = DINNER_BASE_RATE;
+        snapshot.eveningClassRatio = EVENING_CLASS_RATIO;
+        snapshot.dinnerSkipOrOffCampusRate = DINNER_SKIP_OR_OFF_CAMPUS_RATE;
+        snapshot.dinnerUnifiedReleaseTime = DINNER_UNIFIED_RELEASE_TIME;
+        snapshot.dinnerPeakDelayMean = DINNER_PEAK_DELAY_MEAN;
+        snapshot.backgroundFlowRatio = BACKGROUND_FLOW_RATIO;
+        return snapshot;
+    }
+
+    /** Added for backend auto-optimization: restore global config after each candidate run. */
+    public static synchronized void restore(CanteenConfigSnapshot snapshot) {
+        if (snapshot == null) {
+            return;
+        }
+        TOTAL_TABLES = snapshot.totalTables;
+        OPEN_DURATION = snapshot.openDuration;
+        MEAL_GAP_TICKS = snapshot.mealGapTicks;
+        SNAPSHOT_INTERVAL = snapshot.snapshotInterval;
+        RANDOM_SEED = snapshot.randomSeed;
+        HEADLESS_MODE = snapshot.headlessMode;
+        CSV_ENABLED = snapshot.csvEnabled;
+        LISTENER_ENABLED = snapshot.listenerEnabled;
+        REPLAY_RECORD_ENABLED = snapshot.replayRecordEnabled;
+        REPLAY_SNAPSHOT_INTERVAL_SECONDS = snapshot.replaySnapshotIntervalSeconds;
+        WINDOW_DISTANCES = snapshot.windowDistances.clone();
+        WINDOW_AVG_SERVE_TIME = snapshot.windowAvgServeTime.clone();
+        DINING_TIME_MEAN = snapshot.diningTimeMean;
+        DINING_TIME_STD = snapshot.diningTimeStd;
+        MIN_DINING_TIME = snapshot.minDiningTime;
+        PATIENCE_MIN = snapshot.patienceMin;
+        PATIENCE_MAX = snapshot.patienceMax;
+        PROB_SOLO = snapshot.probSolo;
+        PROB_DUO = snapshot.probDuo;
+        PROB_TRIO = snapshot.probTrio;
+        PROB_TEAM = snapshot.probTeam;
+        TOTAL_POPULATION = snapshot.totalPopulation;
+        SIMULATION_MODE = snapshot.simulationMode;
+        MEAL_PERIOD = snapshot.mealPeriod;
+        BREAKFAST_BASE_RATE = snapshot.breakfastBaseRate;
+        EARLY_CLASS_RATIO = snapshot.earlyClassRatio;
+        BREAKFAST_SKIP_RATE = snapshot.breakfastSkipRate;
+        EARLY_CLASS_BREAKFAST_BOOST = snapshot.earlyClassBreakfastBoost;
+        LUNCH_BASE_RATE = snapshot.lunchBaseRate;
+        TAKEOUT_RATE_AT_LUNCH = snapshot.takeoutRateAtLunch;
+        LUNCH_BATCH_WEIGHTS = snapshot.lunchBatchWeights.clone();
+        LUNCH_RELEASE_TIMES = snapshot.lunchReleaseTimes.clone();
+        LUNCH_PEAK_DELAY_MEANS = snapshot.lunchPeakDelayMeans.clone();
+        DINNER_BASE_RATE = snapshot.dinnerBaseRate;
+        EVENING_CLASS_RATIO = snapshot.eveningClassRatio;
+        DINNER_SKIP_OR_OFF_CAMPUS_RATE = snapshot.dinnerSkipOrOffCampusRate;
+        DINNER_UNIFIED_RELEASE_TIME = snapshot.dinnerUnifiedReleaseTime;
+        DINNER_PEAK_DELAY_MEAN = snapshot.dinnerPeakDelayMean;
+        BACKGROUND_FLOW_RATIO = snapshot.backgroundFlowRatio;
+        validate();
+    }
+
     public static synchronized String dumpConfig() {
         return "CanteenConfig{" +
                 "TOTAL_TABLES=" + TOTAL_TABLES +
@@ -394,5 +514,47 @@ public class CanteenConfig {
                 ", SIMULATION_MODE=" + SIMULATION_MODE +
                 ", MEAL_PERIOD=" + MEAL_PERIOD +
                 '}';
+    }
+
+    public static class CanteenConfigSnapshot {
+        private int totalTables;
+        private int openDuration;
+        private int mealGapTicks;
+        private int snapshotInterval;
+        private long randomSeed;
+        private boolean headlessMode;
+        private boolean csvEnabled;
+        private boolean listenerEnabled;
+        private boolean replayRecordEnabled;
+        private int replaySnapshotIntervalSeconds;
+        private int[] windowDistances;
+        private int[] windowAvgServeTime;
+        private double diningTimeMean;
+        private double diningTimeStd;
+        private int minDiningTime;
+        private int patienceMin;
+        private int patienceMax;
+        private double probSolo;
+        private double probDuo;
+        private double probTrio;
+        private double probTeam;
+        private int totalPopulation;
+        private SimulationMode simulationMode;
+        private MealPeriod mealPeriod;
+        private double breakfastBaseRate;
+        private double earlyClassRatio;
+        private double breakfastSkipRate;
+        private double earlyClassBreakfastBoost;
+        private double lunchBaseRate;
+        private double takeoutRateAtLunch;
+        private double[] lunchBatchWeights;
+        private int[] lunchReleaseTimes;
+        private int[] lunchPeakDelayMeans;
+        private double dinnerBaseRate;
+        private double eveningClassRatio;
+        private double dinnerSkipOrOffCampusRate;
+        private int dinnerUnifiedReleaseTime;
+        private int dinnerPeakDelayMean;
+        private double backgroundFlowRatio;
     }
 }

@@ -2,6 +2,7 @@
 .idea/
 *.iml
 out/
+optimization-output/
 
 # Java
 *.class
@@ -31,5 +32,6 @@ bin/
 *.tar
 *.gz
 *.rar
+
 # Generated simulation reports
 simulation-output/
