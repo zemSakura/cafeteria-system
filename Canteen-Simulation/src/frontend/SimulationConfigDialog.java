@@ -25,6 +25,10 @@ public class SimulationConfigDialog extends JDialog {
     private SimulationConfigDTO finalConfig = null;
 
     public SimulationConfigDialog(Frame parent) {
+        this(parent, null);
+    }
+
+    public SimulationConfigDialog(Frame parent, SimulationConfigDTO presetDto) {
         // 设置为模态弹窗（不关掉它，就不能点后面的主界面）
         super(parent, "仿真参数初始化配置", true);
         setSize(400, 400);
@@ -32,7 +36,7 @@ public class SimulationConfigDialog extends JDialog {
         setLayout(new BorderLayout(10, 10));
 
         // 1. 初始化输入框并填入默认值
-        SimulationConfigDTO defaultDto = new SimulationConfigDTO();
+        SimulationConfigDTO defaultDto = presetDto == null ? new SimulationConfigDTO() : presetDto;
         tablesField = new JTextField(String.valueOf(defaultDto.totalTables));
         durationField = new JTextField(String.valueOf(defaultDto.openDuration));
         windowCountField = new JTextField(String.valueOf(defaultDto.windowCount));
@@ -50,7 +54,7 @@ public class SimulationConfigDialog extends JDialog {
         formPanel.add(durationField);
 
         formPanel.add(new javax.swing.JLabel("食堂就餐总人数:"));
-        studentsField = new javax.swing.JTextField("1000"); // 默认给个1000人
+        studentsField = new javax.swing.JTextField(String.valueOf(defaultDto.totalStudents)); // 默认给个1000人
         formPanel.add(studentsField);
 
         formPanel.add(new JLabel("开放窗口数量:"));
@@ -66,6 +70,7 @@ public class SimulationConfigDialog extends JDialog {
         formPanel.add(new JLabel("模拟模式:"));
         String[] modes = {"单时段 (Single Period)", "全天仿真 (Full Day)"};
         modeComboBox = new JComboBox<>(modes);
+        modeComboBox.setSelectedIndex("fullDay".equals(defaultDto.simulationMode) ? 1 : 0);
         formPanel.add(modeComboBox);
 
         // 【新增】：餐段选择下拉框
@@ -73,7 +78,14 @@ public class SimulationConfigDialog extends JDialog {
         String[] meals = {"早餐 (Breakfast)", "午餐 (Lunch)", "晚餐 (Dinner)"};
         mealComboBox = new JComboBox<>(meals);
         // 默认选午餐，因为午餐逻辑最复杂
-        mealComboBox.setSelectedIndex(1);
+        if ("breakfast".equals(defaultDto.mealPeriod)) {
+            mealComboBox.setSelectedIndex(0);
+        } else if ("dinner".equals(defaultDto.mealPeriod)) {
+            mealComboBox.setSelectedIndex(2);
+        } else {
+            mealComboBox.setSelectedIndex(1);
+        }
+        mealComboBox.setEnabled(modeComboBox.getSelectedIndex() == 0);
         formPanel.add(mealComboBox);
 
         // 【高阶联动体验】：如果选了全天，就把餐段下拉框置灰（因为全天模式不需要选单餐）

@@ -5,6 +5,7 @@ import backend.config.CanteenConfig;
 import backend.engine.SimulationEngine;
 import backend.model.Student;
 import backend.module.ArrivalModule;
+import backend.optimize.SimRunResult;
 
 import javax.swing.*;
 import java.awt.*;
@@ -17,6 +18,11 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
     private static JButton startButton;
     private static JButton stopButton;
     private static JLabel phaseLabel;
+    private static final String VIEW_OPTIMIZATION = "optimization";
+    private static final String VIEW_REPLAY = "replay";
+    private static CardLayout dashboardCardLayout;
+    private static JPanel dashboardCards;
+    private static SimulationConfigDTO replayPresetConfig;
 
     private static MainDashboard frame;
 
@@ -46,7 +52,7 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         frame.setSize(1200, 800);
         frame.setLayout(new BorderLayout(10, 10));
 
-        frame.add(createConfigPanel(), BorderLayout.NORTH);
+        frame.add(createViewSwitchPanel(), BorderLayout.NORTH);
         frame.getContentPane().setBackground(ColorTheme.BG_MAIN);
 
         // 1. 顶部控制栏
@@ -137,14 +143,67 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         // 将初始分割线设为 0.75 的比例，避免硬编码像素导致在不同屏幕上被截断
         splitPane.setDividerLocation(0.75);
 
-        frame.add(splitPane, BorderLayout.CENTER);
+        JPanel replayPanel = new JPanel(new BorderLayout(10, 10));
+        replayPanel.setBackground(ColorTheme.BG_MAIN);
+        replayPanel.add(createConfigPanel(), BorderLayout.NORTH);
+        replayPanel.add(splitPane, BorderLayout.CENTER);
+
+        dashboardCardLayout = new CardLayout();
+        dashboardCards = new JPanel(dashboardCardLayout);
+        dashboardCards.setBackground(ColorTheme.BG_MAIN);
+        dashboardCards.add(new OptimizationPanel(MainDashboard::applyOptimizationPreset), VIEW_OPTIMIZATION);
+        dashboardCards.add(replayPanel, VIEW_REPLAY);
+
+        frame.add(dashboardCards, BorderLayout.CENTER);
+        dashboardCardLayout.show(dashboardCards, VIEW_OPTIMIZATION);
         frame.setLocationRelativeTo(null);
         frame.setVisible(true);
     }
 
+    private static JPanel createViewSwitchPanel() {
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 10));
+        panel.setBackground(ColorTheme.BG_MAIN);
+        panel.setBorder(BorderFactory.createEmptyBorder(0, 6, 0, 6));
+
+        JButton optimizeViewButton = new JButton("寻优模式");
+        JButton replayViewButton = new JButton("复盘模式");
+        styleNavButton(optimizeViewButton, ColorTheme.ACCENT_CYAN);
+        styleNavButton(replayViewButton, ColorTheme.ACCENT_YELLOW);
+
+        optimizeViewButton.addActionListener(e -> dashboardCardLayout.show(dashboardCards, VIEW_OPTIMIZATION));
+        replayViewButton.addActionListener(e -> dashboardCardLayout.show(dashboardCards, VIEW_REPLAY));
+
+        panel.add(optimizeViewButton);
+        panel.add(replayViewButton);
+        return panel;
+    }
+
+    private static void styleNavButton(JButton button, Color accentColor) {
+        button.setFocusPainted(false);
+        button.setForeground(ColorTheme.BG_CARD);
+        button.setBackground(accentColor);
+    }
+
+    private static void applyOptimizationPreset(SimRunResult result) {
+        SimulationConfigDTO preset = new SimulationConfigDTO();
+        preset.totalTables = result.tableCount;
+        preset.windowCount = result.windowCount;
+        preset.randomSeed = result.randomSeed == 0L ? preset.randomSeed : result.randomSeed;
+        preset.simulationMode = "singlePeriod";
+        preset.mealPeriod = "lunch";
+        replayPresetConfig = preset;
+
+        dashboardCardLayout.show(dashboardCards, VIEW_REPLAY);
+        JOptionPane.showMessageDialog(frame,
+                "已导入复盘初始化参数：窗口 " + result.windowCount + "，桌子 " + result.tableCount,
+                "导入成功",
+                JOptionPane.INFORMATION_MESSAGE);
+    }
+
     private static JPanel createConfigPanel() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 15, 10));
-        panel.setBorder(BorderFactory.createTitledBorder("Initialization Config"));
+        panel.setBackground(ColorTheme.BG_CARD);
+        panel.setBorder(BorderFactory.createEmptyBorder(10, 12, 10, 12));
 
         startButton = new JButton("▶ 开始仿真");
         stopButton = new JButton("■ 停止仿真");
@@ -159,7 +218,7 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         panel.add(phaseLabel);
 
         startButton.addActionListener(e -> {
-            SimulationConfigDialog configDialog = new SimulationConfigDialog(null);
+            SimulationConfigDialog configDialog = new SimulationConfigDialog(frame, replayPresetConfig);
             configDialog.setVisible(true);
 
             if (!configDialog.isConfirmed()) {
@@ -167,6 +226,7 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
             }
 
             SimulationConfigDTO dto = configDialog.getConfigData();
+            replayPresetConfig = dto;
 
             try {
                 // [原有的前端自身配置可能还需要保留]
