@@ -4,7 +4,22 @@ public class GridSearchOptimizer {
     private final SimulationAdapter adapter = new SimulationAdapter();
     private final LossEvaluator lossEvaluator = new LossEvaluator();
 
+    public interface ProgressListener {
+        void onStepFinished(int step, int total, SimRunResult stepResult, OptimizeResult currentResult);
+    }
+
+    public interface CancellationChecker {
+        boolean isCancelled();
+    }
+
     public OptimizeResult run(OptimizeConfig optimizeConfig, LossConfig lossConfig) {
+        return run(optimizeConfig, lossConfig, null, null);
+    }
+
+    public OptimizeResult run(OptimizeConfig optimizeConfig,
+                              LossConfig lossConfig,
+                              ProgressListener progressListener,
+                              CancellationChecker cancellationChecker) {
         optimizeConfig.validate();
         lossConfig.validate();
 
@@ -17,8 +32,20 @@ public class GridSearchOptimizer {
 
         for (int w = optimizeConfig.minWindowCount; w <= optimizeConfig.maxWindowCount; w++) {
             for (int t = optimizeConfig.minTableCount; t <= optimizeConfig.maxTableCount; t++) {
+                if (isCancelled(cancellationChecker)) {
+                    optimizeResult.totalRuntimeMs = System.currentTimeMillis() - totalStart;
+                    optimizeResult.buildTopK(optimizeConfig.topK);
+                    return optimizeResult;
+                }
+
                 step++;
-                SimRunResult avgResult = runRepeated(w, t, step, optimizeConfig);
+                SimRunResult avgResult = runRepeated(w, t, step, optimizeConfig, cancellationChecker);
+                if (avgResult == null) {
+                    optimizeResult.totalRuntimeMs = System.currentTimeMillis() - totalStart;
+                    optimizeResult.buildTopK(optimizeConfig.topK);
+                    return optimizeResult;
+                }
+
                 double loss = lossEvaluator.evaluate(avgResult, lossConfig);
                 avgResult.loss = loss;
                 avgResult.step = step;
@@ -30,6 +57,9 @@ public class GridSearchOptimizer {
 
                 avgResult.currentBestLoss = optimizeResult.bestLoss;
                 optimizeResult.allResults.add(avgResult);
+                if (progressListener != null) {
+                    progressListener.onStepFinished(step, optimizeResult.totalCandidateCount, avgResult, optimizeResult);
+                }
 
                 if (optimizeConfig.verboseConsoleLog) {
                     printStepLog(step, optimizeConfig.totalCandidateCount(), avgResult);
@@ -47,14 +77,26 @@ public class GridSearchOptimizer {
         return optimizeResult;
     }
 
-    private SimRunResult runRepeated(int windowCount, int tableCount, int step, OptimizeConfig config) {
+    private SimRunResult runRepeated(int windowCount,
+                                     int tableCount,
+                                     int step,
+                                     OptimizeConfig config,
+                                     CancellationChecker cancellationChecker) {
         ResultAverager averager = new ResultAverager();
         for (int i = 0; i < config.repeatTimes; i++) {
+            if (isCancelled(cancellationChecker)) {
+                return null;
+            }
             long seed = config.baseRandomSeed + step * 1000L + i;
             SimRunResult r = adapter.runOnce(windowCount, tableCount, SimRunOptions.optimize(seed));
             averager.add(r);
         }
         return averager.average();
+    }
+
+    private boolean isCancelled(CancellationChecker cancellationChecker) {
+        return Thread.currentThread().isInterrupted()
+                || (cancellationChecker != null && cancellationChecker.isCancelled());
     }
 
     private ReplayResult runReplay(SimRunResult best, OptimizeConfig config) {
