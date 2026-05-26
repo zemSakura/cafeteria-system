@@ -133,6 +133,17 @@ public class ArrivalModule {
     public ArrivalGenerationResult generateArrivalPlan(int totalPopulation,
                                                        SimulationMode simulationMode,
                                                        MealPeriod mealPeriod) {
+        return generateArrivalPlan(totalPopulation, simulationMode, mealPeriod, true);
+    }
+
+    /**
+     * Headless optimization does not consume arrival event DTOs. Skipping them
+     * avoids thousands of short-lived SimulationEvent allocations in grid search.
+     */
+    public ArrivalGenerationResult generateArrivalPlan(int totalPopulation,
+                                                       SimulationMode simulationMode,
+                                                       MealPeriod mealPeriod,
+                                                       boolean includeArrivalEvents) {
         if (totalPopulation <= 0) {
             throw new IllegalArgumentException("totalPopulation must be greater than 0");
         }
@@ -143,7 +154,7 @@ public class ArrivalModule {
         Map<MealPeriod, Integer> populations = deriveMealPopulations(totalPopulation);
         List<MealPeriod> periods = resolvePeriods(mode, selectedPeriod);
 
-        List<Student> students = new ArrayList<>();
+        List<Student> students = new ArrayList<>(Math.max(1, totalPopulation * periods.size()));
         Map<MealPeriod, MealArrivalStats> mealStats = new LinkedHashMap<>();
         List<ArrivalGenerationResult.PhaseBoundary> phaseBoundaries = new ArrayList<>();
 
@@ -193,7 +204,9 @@ public class ArrivalModule {
                 .thenComparingInt(Student::getGroupId)
                 .thenComparingInt(Student::getId));
 
-        List<SimulationEvent> events = generateArrivalEvents(students);
+        List<SimulationEvent> events = includeArrivalEvents
+                ? generateArrivalEvents(students)
+                : Collections.emptyList();
 
         lastGenerationResult = new ArrivalGenerationResult(
                 mode,
@@ -251,7 +264,7 @@ public class ArrivalModule {
     }
 
     public List<SimulationEvent> generateArrivalEvents(List<Student> students) {
-        List<SimulationEvent> events = new ArrayList<>();
+        List<SimulationEvent> events = new ArrayList<>(students == null ? 0 : students.size());
 
         for (Student student : students) {
             events.add(new SimulationEvent(
@@ -308,7 +321,7 @@ public class ArrivalModule {
         );
 
         List<Integer> groupSizes = generateGroupSizes(population);
-        List<Student> students = new ArrayList<>();
+        List<Student> students = new ArrayList<>(Math.max(1, population));
 
         for (Integer groupSize : groupSizes) {
             int groupId = counters[1]++;

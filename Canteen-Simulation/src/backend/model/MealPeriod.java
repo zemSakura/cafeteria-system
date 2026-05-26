@@ -7,9 +7,9 @@ package backend.model;
  * while the simulation engine can still consume monotonically increasing times.
  */
 public enum MealPeriod {
-    BREAKFAST("breakfast", "Breakfast", 6 * 60 + 30, 9 * 60),
-    LUNCH("lunch", "Lunch", 11 * 60, 13 * 60 + 30),
-    DINNER("dinner", "Dinner", 17 * 60, 19 * 60 + 30);
+    BREAKFAST("breakfast", "早餐", 6 * 60 + 30, 9 * 60),
+    LUNCH("lunch", "午餐", 11 * 60, 13 * 60 + 30),
+    DINNER("dinner", "晚餐", 17 * 60, 19 * 60 + 30);
 
     private final String code;
     private final String displayName;
@@ -55,6 +55,6 @@ public enum MealPeriod {
             }
         }
 
-        throw new IllegalArgumentException("Unsupported mealPeriod: " + code);
+        throw new IllegalArgumentException("不支持的餐段: " + code);
     }
 }

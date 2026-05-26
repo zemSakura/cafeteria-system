@@ -22,6 +22,17 @@ public class SimRunResult {
     public long runtimeMs;
     public long randomSeed;
     public String mealMode;
+    public int requestedPopulation;
+    public int openDuration;
+    public double probSolo;
+    public String simulationModeCode;
+    public String mealPeriodCode;
+    public int minWindowCount;
+    public int maxWindowCount;
+    public int minTableCount;
+    public int maxTableCount;
+    public long baseRandomSeed;
+    public int repeatTimes;
 
     public SimRunResult copyBasic() {
         SimRunResult r = new SimRunResult();
@@ -46,6 +57,17 @@ public class SimRunResult {
         r.runtimeMs = this.runtimeMs;
         r.randomSeed = this.randomSeed;
         r.mealMode = this.mealMode;
+        r.requestedPopulation = this.requestedPopulation;
+        r.openDuration = this.openDuration;
+        r.probSolo = this.probSolo;
+        r.simulationModeCode = this.simulationModeCode;
+        r.mealPeriodCode = this.mealPeriodCode;
+        r.minWindowCount = this.minWindowCount;
+        r.maxWindowCount = this.maxWindowCount;
+        r.minTableCount = this.minTableCount;
+        r.maxTableCount = this.maxTableCount;
+        r.baseRandomSeed = this.baseRandomSeed;
+        r.repeatTimes = this.repeatTimes;
         return r;
     }
 }

@@ -11,6 +11,8 @@ import java.util.regex.Pattern;
 public class SimulationConfigDialog extends JDialog {
     private JComboBox<String> modeComboBox;
     private JComboBox<String> mealComboBox;
+    private final SimulationConfigDTO presetDto;
+    private final boolean lockedFromOptimization;
 
     // UI 组件：输入框
     private JTextField tablesField;
@@ -31,12 +33,14 @@ public class SimulationConfigDialog extends JDialog {
     public SimulationConfigDialog(Frame parent, SimulationConfigDTO presetDto) {
         // 设置为模态弹窗（不关掉它，就不能点后面的主界面）
         super(parent, "仿真参数初始化配置", true);
-        setSize(400, 400);
+        setSize(430, 430);
         setLocationRelativeTo(parent); // 居中显示
         setLayout(new BorderLayout(10, 10));
 
         // 1. 初始化输入框并填入默认值
         SimulationConfigDTO defaultDto = presetDto == null ? new SimulationConfigDTO() : presetDto;
+        this.presetDto = defaultDto;
+        this.lockedFromOptimization = defaultDto.lockedFromOptimization;
         tablesField = new JTextField(String.valueOf(defaultDto.totalTables));
         durationField = new JTextField(String.valueOf(defaultDto.openDuration));
         windowCountField = new JTextField(String.valueOf(defaultDto.windowCount));
@@ -47,7 +51,7 @@ public class SimulationConfigDialog extends JDialog {
         JPanel formPanel = new JPanel(new GridLayout(8, 2, 10, 15));
         formPanel.setBorder(BorderFactory.createEmptyBorder(20, 30, 20, 30));
 
-        formPanel.add(new JLabel("就餐区桌子总数 (1-200):"));
+        formPanel.add(new JLabel(buildTableLabel()));
         formPanel.add(tablesField);
 
         formPanel.add(new JLabel("营业总时长 (分钟):"));
@@ -57,7 +61,7 @@ public class SimulationConfigDialog extends JDialog {
         studentsField = new javax.swing.JTextField(String.valueOf(defaultDto.totalStudents)); // 默认给个1000人
         formPanel.add(studentsField);
 
-        formPanel.add(new JLabel("开放窗口数量:"));
+        formPanel.add(new JLabel(buildWindowLabel()));
         formPanel.add(windowCountField);
 
         formPanel.add(new JLabel("单人就餐概率 (0.0-1.0):"));
@@ -68,14 +72,14 @@ public class SimulationConfigDialog extends JDialog {
 
         // 【新增】：模拟模式下拉框
         formPanel.add(new JLabel("模拟模式:"));
-        String[] modes = {"单时段 (Single Period)", "全天仿真 (Full Day)"};
+        String[] modes = {"单时段", "全天仿真"};
         modeComboBox = new JComboBox<>(modes);
         modeComboBox.setSelectedIndex("fullDay".equals(defaultDto.simulationMode) ? 1 : 0);
         formPanel.add(modeComboBox);
 
         // 【新增】：餐段选择下拉框
         formPanel.add(new JLabel("目标餐段:"));
-        String[] meals = {"早餐 (Breakfast)", "午餐 (Lunch)", "晚餐 (Dinner)"};
+        String[] meals = {"早餐", "午餐", "晚餐"};
         mealComboBox = new JComboBox<>(meals);
         // 默认选午餐，因为午餐逻辑最复杂
         if ("breakfast".equals(defaultDto.mealPeriod)) {
@@ -91,16 +95,23 @@ public class SimulationConfigDialog extends JDialog {
         // 【高阶联动体验】：如果选了全天，就把餐段下拉框置灰（因为全天模式不需要选单餐）
         modeComboBox.addActionListener(e -> {
             boolean isSingle = modeComboBox.getSelectedIndex() == 0;
-            mealComboBox.setEnabled(isSingle);
+            mealComboBox.setEnabled(isSingle && !lockedFromOptimization);
         });
 
+        if (lockedFromOptimization) {
+            JLabel lockNotice = new JLabel("复盘参数已锁定：请确认后运行");
+            lockNotice.setBorder(BorderFactory.createEmptyBorder(10, 30, 0, 30));
+            lockNotice.setForeground(frontend.ColorTheme.ACCENT_YELLOW);
+            this.add(lockNotice, BorderLayout.NORTH);
+        }
         this.add(formPanel, BorderLayout.CENTER);
 
         // 3. 组装底部按钮面板
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        JButton importBtn = new JButton("导入 JSON 配置");
+        JButton importBtn = new JButton("导入配置文件");
         JButton cancelBtn = new JButton("取消");
         JButton confirmBtn = new JButton("确认并启动");
+        applyReplayLock(importBtn);
 
         buttonPanel.add(importBtn);
         buttonPanel.add(cancelBtn);
@@ -120,7 +131,7 @@ public class SimulationConfigDialog extends JDialog {
         importBtn.addActionListener(e -> {
             JFileChooser fileChooser = new JFileChooser();
             // 只允许选择 .json 文件
-            fileChooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("JSON Configuration", "json"));
+            fileChooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("配置文件", "json"));
 
             int result = fileChooser.showOpenDialog(this);
             if (result == JFileChooser.APPROVE_OPTION) {
@@ -132,6 +143,7 @@ public class SimulationConfigDialog extends JDialog {
                     // 手动解析（如果没有引入库，可以用正则提取数字）
                     tablesField.setText(extractJsonValue(content, "totalTables"));
                     durationField.setText(extractJsonValue(content, "openDuration"));
+                    studentsField.setText(extractJsonValue(content, "totalStudents"));
                     windowCountField.setText(extractJsonValue(content, "windowCount"));
                     probSoloField.setText(extractJsonValue(content, "probSolo"));
                     seedField.setText(extractJsonValue(content, "randomSeed"));
@@ -144,6 +156,21 @@ public class SimulationConfigDialog extends JDialog {
         });
     }
 
+    private void applyReplayLock(JButton importBtn) {
+        if (!lockedFromOptimization) {
+            return;
+        }
+        tablesField.setEnabled(false);
+        windowCountField.setEnabled(false);
+        durationField.setEnabled(false);
+        studentsField.setEnabled(false);
+        probSoloField.setEnabled(false);
+        seedField.setEnabled(false);
+        modeComboBox.setEnabled(false);
+        mealComboBox.setEnabled(false);
+        importBtn.setEnabled(false);
+    }
+
     // 辅助方法：从 JSON 中提取数字
     private String extractJsonValue(String json, String key) {
         Pattern pattern = Pattern.compile("\"" + key + "\":\\s*([0-9.]+)");
@@ -154,32 +181,40 @@ public class SimulationConfigDialog extends JDialog {
         return "";
     }
 
+    private String buildTableLabel() {
+        return lockedFromOptimization ? "就餐区桌子总数:" : "就餐区桌子总数 (1-200):";
+    }
+
+    private String buildWindowLabel() {
+        return "开放窗口数量:";
+    }
+
     // --- 核心校验逻辑 ---
     private void handleConfirm() {
         try {
             SimulationConfigDTO dto = new SimulationConfigDTO();
-            dto.totalTables = Integer.parseInt(tablesField.getText().trim());
-            dto.openDuration = Integer.parseInt(durationField.getText().trim());
-            dto.windowCount = Integer.parseInt(windowCountField.getText().trim());
-            dto.probSolo = Double.parseDouble(probSoloField.getText().trim());
-            dto.randomSeed = Long.parseLong(seedField.getText().trim());
-            dto.totalStudents = Integer.parseInt(studentsField.getText().trim());
-            dto.simulationMode = modeComboBox.getSelectedIndex() == 0 ? "singlePeriod" : "fullDay";
+            if (lockedFromOptimization) {
+                copyLockedOptimizationFields(dto);
+            } else {
+                dto.totalTables = Integer.parseInt(tablesField.getText().trim());
+                dto.windowCount = Integer.parseInt(windowCountField.getText().trim());
+                dto.openDuration = Integer.parseInt(durationField.getText().trim());
+                dto.probSolo = Double.parseDouble(probSoloField.getText().trim());
+                dto.randomSeed = Long.parseLong(seedField.getText().trim());
+                dto.totalStudents = Integer.parseInt(studentsField.getText().trim());
+                dto.simulationMode = modeComboBox.getSelectedIndex() == 0 ? "singlePeriod" : "fullDay";
 
-            int mealIdx = mealComboBox.getSelectedIndex();
-            if (mealIdx == 0) dto.mealPeriod = "breakfast";
-            else if (mealIdx == 1) dto.mealPeriod = "lunch";
-            else dto.mealPeriod = "dinner";
+                int mealIdx = mealComboBox.getSelectedIndex();
+                if (mealIdx == 0) dto.mealPeriod = "breakfast";
+                else if (mealIdx == 1) dto.mealPeriod = "lunch";
+                else dto.mealPeriod = "dinner";
+            }
+
+            validateReplayConfig(dto);
 
             // 业务规则校验
-            if (dto.totalTables <= 0 || dto.totalTables > 200) {
-                throw new IllegalArgumentException("桌子数量必须在 1 到 200 之间！");
-            }
             if (dto.probSolo < 0.0 || dto.probSolo > 1.0) {
                 throw new IllegalArgumentException("概率必须在 0 到 1 之间！");
-            }
-            if (dto.windowCount <= 0) {
-                throw new IllegalArgumentException("窗口数量必须大于 0！");
             }
             if (dto.totalStudents <= 0 || dto.totalStudents > 10000) {
                 throw new IllegalArgumentException("总人数应在 1 到 10000 之间！");
@@ -195,6 +230,49 @@ public class SimulationConfigDialog extends JDialog {
         } catch (IllegalArgumentException ex) {
             JOptionPane.showMessageDialog(this, ex.getMessage(), "参数越界", JOptionPane.WARNING_MESSAGE);
         }
+    }
+
+    private void validateReplayConfig(SimulationConfigDTO dto) {
+        if (dto.lockedFromOptimization) {
+            if (dto.windowCount < dto.minWindowCount || dto.windowCount > dto.maxWindowCount) {
+                throw new IllegalArgumentException("窗口数量必须在寻优范围 "
+                        + dto.minWindowCount + " 到 " + dto.maxWindowCount + " 之间！");
+            }
+            if (dto.totalTables < dto.minTableCount || dto.totalTables > dto.maxTableCount) {
+                throw new IllegalArgumentException("桌子数量必须在寻优范围 "
+                        + dto.minTableCount + " 到 " + dto.maxTableCount + " 之间！");
+            }
+            return;
+        }
+
+        if (dto.totalTables <= 0 || dto.totalTables > 200) {
+            throw new IllegalArgumentException("桌子数量必须在 1 到 200 之间！");
+        }
+        if (dto.windowCount <= 0) {
+            throw new IllegalArgumentException("窗口数量必须大于 0！");
+        }
+    }
+
+    private void copyLockedOptimizationFields(SimulationConfigDTO dto) {
+        dto.totalTables = presetDto.totalTables;
+        dto.windowCount = presetDto.windowCount;
+        dto.openDuration = presetDto.openDuration;
+        dto.probSolo = presetDto.probSolo;
+        dto.randomSeed = presetDto.randomSeed;
+        dto.totalStudents = presetDto.totalStudents;
+        dto.simulationMode = presetDto.simulationMode;
+        dto.mealPeriod = presetDto.mealPeriod;
+        dto.lockedFromOptimization = true;
+        dto.lockedWindowDistances = cloneArray(presetDto.lockedWindowDistances);
+        dto.lockedWindowAvgServeTime = cloneArray(presetDto.lockedWindowAvgServeTime);
+        dto.minWindowCount = presetDto.minWindowCount;
+        dto.maxWindowCount = presetDto.maxWindowCount;
+        dto.minTableCount = presetDto.minTableCount;
+        dto.maxTableCount = presetDto.maxTableCount;
+    }
+
+    private int[] cloneArray(int[] values) {
+        return values == null ? null : values.clone();
     }
 
     // 提供给外部调用的方法：判断用户是点了确认还是取消

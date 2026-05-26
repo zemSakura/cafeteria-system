@@ -22,7 +22,7 @@ public class OptimizationCsvExporter {
 
     private void exportOptimizationResult(OptimizeResult result, String path) {
         try (PrintWriter out = new PrintWriter(new FileWriter(path))) {
-            out.println("step,windowCount,tableCount,totalStudents,avgWaitTimeMinutes,maxQueueLength,avgQueueLength,seatUtilization,windowUtilization,finishRate,abandonRate,loss,currentBestLoss,runtimeMs");
+            out.println("步骤,窗口数,桌子数,学生总数,平均等待分钟,最大排队人数,平均排队长度,座位利用率,窗口利用率,完成率,放弃率,损失值,当前最佳损失,运行耗时毫秒");
             for (SimRunResult r : result.allResults) {
                 out.println(r.step + ","
                         + r.windowCount + ","
@@ -46,7 +46,7 @@ public class OptimizationCsvExporter {
 
     private void exportTopK(OptimizeResult result, String path) {
         try (PrintWriter out = new PrintWriter(new FileWriter(path))) {
-            out.println("rank,windowCount,tableCount,avgWaitTimeMinutes,maxQueueLength,seatUtilization,windowUtilization,finishRate,abandonRate,loss");
+            out.println("排名,窗口数,桌子数,平均等待分钟,最大排队人数,座位利用率,窗口利用率,完成率,放弃率,损失值");
             int rank = 1;
             for (SimRunResult r : result.topKResults) {
                 out.println(rank++ + ","
@@ -67,7 +67,7 @@ public class OptimizationCsvExporter {
 
     private void exportReplay(ReplayResult replay, String path) {
         try (PrintWriter out = new PrintWriter(new FileWriter(path))) {
-            out.println("timeSecond,timeMinute,totalQueueLength,windowQueueLengths,busyWindowCount,totalWindowCount,occupiedSeats,totalSeats,emptySeats,diningStudents,arrivedStudents,servedStudents,finishedStudents,abandonedStudents");
+            out.println("时间秒,时间分钟,总排队人数,各窗口排队人数,忙碌窗口数,窗口总数,已占座位,座位总数,空座位,就餐人数,已到达人数,已服务人数,已完成人数,已放弃人数");
             for (ReplaySnapshot s : replay.snapshots) {
                 out.println(s.timeSecond + ","
                         + s.timeMinute + ","

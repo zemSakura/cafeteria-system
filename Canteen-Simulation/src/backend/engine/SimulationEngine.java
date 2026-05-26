@@ -276,6 +276,20 @@ public class SimulationEngine implements Runnable {
                 trySeatWaitingGroups();
                 processArrivals();
                 processServiceStarts();
+
+                if (isFastForwardMode()) {
+                    if (isSimulationFinished()) {
+                        sampleCurrentState();
+                        break;
+                    }
+                    long nextTime = findNextEventTimeAfterCurrent();
+                    long duration = Math.max(1L, nextTime - currentTime);
+                    sampleCurrentState(duration);
+                    currentTime += duration;
+                    checkAndBroadcastPhase();
+                    continue;
+                }
+
                 sampleCurrentState();
                 if (CanteenConfig.CSV_ENABLED) {
                     writeCurrentSnapshot();
@@ -303,6 +317,38 @@ public class SimulationEngine implements Runnable {
             running = false;
             listener.onSimulationFinished();
         }
+    }
+
+    private boolean isFastForwardMode() {
+        return CanteenConfig.HEADLESS_MODE
+                && !CanteenConfig.CSV_ENABLED
+                && !CanteenConfig.REPLAY_RECORD_ENABLED;
+    }
+
+    private long findNextEventTimeAfterCurrent() {
+        long nextTime = Long.MAX_VALUE;
+
+        if (nextArrivalIndex < allStudents.size()) {
+            long arrivalTime = allStudents.get(nextArrivalIndex).getArrivalTime();
+            if (arrivalTime > currentTime) {
+                nextTime = Math.min(nextTime, arrivalTime);
+            }
+        }
+
+        for (long serviceEndTime : serviceEndTimes) {
+            if (serviceEndTime > currentTime) {
+                nextTime = Math.min(nextTime, serviceEndTime);
+            }
+        }
+
+        for (Student student : diningStudents) {
+            long diningEndTime = student.getDiningEndTime();
+            if (diningEndTime > currentTime) {
+                nextTime = Math.min(nextTime, diningEndTime);
+            }
+        }
+
+        return nextTime == Long.MAX_VALUE ? currentTime + 1 : nextTime;
     }
 
     private void checkAndBroadcastPhase() {
@@ -791,16 +837,21 @@ public class SimulationEngine implements Runnable {
 
     /** Added for backend auto-optimization: collect aggregate samples without requiring CSV output. */
     private void sampleCurrentState() {
+        sampleCurrentState(1L);
+    }
+
+    private void sampleCurrentState(long durationSeconds) {
+        long duration = Math.max(1L, durationSeconds);
         int totalQueueLength = getTotalQueueLength();
-        queueLengthSum += totalQueueLength;
-        queueSampleCount++;
+        queueLengthSum += totalQueueLength * duration;
+        queueSampleCount += duration;
         maxTotalQueueLength = Math.max(maxTotalQueueLength, totalQueueLength);
 
-        occupiedSeatsSum += getActualSeatedSeatCount();
-        seatSampleCount++;
+        occupiedSeatsSum += getActualSeatedSeatCount() * duration;
+        seatSampleCount += duration;
 
-        busyWindowSum += getBusyWindowCount();
-        windowSampleCount++;
+        busyWindowSum += getBusyWindowCount() * duration;
+        windowSampleCount += duration;
     }
 
     private void recordReplaySnapshotIfNeeded() {

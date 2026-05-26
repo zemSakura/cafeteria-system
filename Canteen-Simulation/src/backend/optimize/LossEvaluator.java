@@ -10,11 +10,14 @@ public class LossEvaluator {
         double abandonNorm = r.abandonRate / c.maxAcceptAbandonRate;
         double utilNorm = Math.abs(r.seatUtilization - c.targetSeatUtilization) / c.targetSeatUtilization;
 
-        double loss = c.costWeight * costNorm
-                + c.waitWeight * waitNorm
+        double experienceLoss = c.waitWeight * waitNorm
                 + c.queueWeight * queueNorm
                 + c.abandonWeight * abandonNorm
                 + c.utilizationWeight * utilNorm;
+
+        double loss = c.costWeight * costNorm
+                + c.experienceWeight * experienceLoss
+                + calculateHardConstraintPenalty(r, c);
 
         if (r.finishRate < c.minAcceptFinishRate) {
             loss += c.lowFinishRatePenalty * (c.minAcceptFinishRate - r.finishRate);
@@ -23,5 +26,30 @@ public class LossEvaluator {
             return Double.MAX_VALUE;
         }
         return loss;
+    }
+
+    private double calculateHardConstraintPenalty(SimRunResult r, LossConfig c) {
+        double penalty = 0.0;
+        penalty += c.waitExponentialPenaltyWeight * exponentialOverThreshold(
+                r.avgWaitTimeMinutes,
+                c.hardWaitThresholdMinutes,
+                c.waitPenaltyScaleMinutes,
+                c.maxExponentialPenaltyInput
+        );
+        penalty += c.queueExponentialPenaltyWeight * exponentialOverThreshold(
+                r.maxQueueLength,
+                c.hardQueueThresholdLength,
+                c.queuePenaltyScaleLength,
+                c.maxExponentialPenaltyInput
+        );
+        return penalty;
+    }
+
+    private double exponentialOverThreshold(double value, double threshold, double scale, double maxInput) {
+        if (value <= threshold) {
+            return 0.0;
+        }
+        double input = Math.min(maxInput, (value - threshold) / scale);
+        return Math.expm1(input);
     }
 }

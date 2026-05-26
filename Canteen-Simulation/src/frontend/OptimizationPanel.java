@@ -38,6 +38,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
 
 public class OptimizationPanel extends JPanel {
+    private final JTextField totalPopulationField = new JTextField("1000", 6);
     private final JTextField minWindowField = new JTextField("3", 6);
     private final JTextField maxWindowField = new JTextField("6", 6);
     private final JTextField minTableField = new JTextField("80", 6);
@@ -47,8 +48,8 @@ public class OptimizationPanel extends JPanel {
 
     private final JButton startOptimizeButton = new JButton("开始寻优");
     private final JButton cancelOptimizeButton = new JButton("取消寻优");
-    private final JButton importBestButton = new JButton("导入 Best 到复盘");
-    private final JButton importSelectedTopKButton = new JButton("导入选中 TopK");
+    private final JButton importBestButton = new JButton("导入最佳方案到复盘");
+    private final JButton importSelectedTopKButton = new JButton("导入选中方案");
     private final JLabel statusLabel = new JLabel("等待任务");
     private final JProgressBar progressBar = new JProgressBar();
 
@@ -61,12 +62,13 @@ public class OptimizationPanel extends JPanel {
     private final LossCurvePanel lossCurvePanel = new LossCurvePanel();
     private final HeatmapPanel heatmapPanel = new HeatmapPanel();
     private final Consumer<SimRunResult> replayPresetConsumer;
+    private final Consumer<SimRunResult> replayContextConsumer;
     private List<SimRunResult> displayedTopKResults = Collections.emptyList();
     private SimRunResult currentBestResult;
     private int currentTopK = 10;
 
     private final DefaultTableModel topKTableModel = new DefaultTableModel(
-            new Object[]{"Rank", "Window", "Table", "Wait(min)", "Loss", "SeatUse", "WindowUse", "MaxQ", "Abandon", "Finish"},
+            new Object[]{"排名", "窗口数", "桌子数", "等待(分钟)", "损失值", "座位利用率", "窗口利用率", "最大排队", "放弃率", "完成率"},
             0
     ) {
         @Override
@@ -83,8 +85,14 @@ public class OptimizationPanel extends JPanel {
     }
 
     public OptimizationPanel(Consumer<SimRunResult> replayPresetConsumer) {
+        this(replayPresetConsumer, null);
+    }
+
+    public OptimizationPanel(Consumer<SimRunResult> replayPresetConsumer,
+                             Consumer<SimRunResult> replayContextConsumer) {
         super(new BorderLayout(14, 14));
         this.replayPresetConsumer = replayPresetConsumer;
+        this.replayContextConsumer = replayContextConsumer;
         setBackground(ColorTheme.BG_MAIN);
         setBorder(BorderFactory.createEmptyBorder(16, 16, 16, 16));
 
@@ -96,17 +104,18 @@ public class OptimizationPanel extends JPanel {
         JPanel inputArea = createCardPanel(new BorderLayout(0, 14));
         inputArea.setPreferredSize(new Dimension(260, 0));
 
-        JLabel title = createTitleLabel("Optimization Console");
+        JLabel title = createTitleLabel("自动寻优控制台");
         inputArea.add(title, BorderLayout.NORTH);
 
         JPanel form = new JPanel(new GridLayout(0, 2, 10, 10));
         form.setOpaque(false);
-        addFormRow(form, "minWindow", minWindowField);
-        addFormRow(form, "maxWindow", maxWindowField);
-        addFormRow(form, "minTable", minTableField);
-        addFormRow(form, "maxTable", maxTableField);
-        addFormRow(form, "repeatTimes", repeatTimesField);
-        addFormRow(form, "TopK", topKField);
+        addFormRow(form, "就餐人数", totalPopulationField);
+        addFormRow(form, "最小窗口数", minWindowField);
+        addFormRow(form, "最大窗口数", maxWindowField);
+        addFormRow(form, "最小桌子数", minTableField);
+        addFormRow(form, "最大桌子数", maxTableField);
+        addFormRow(form, "重复次数", repeatTimesField);
+        addFormRow(form, "候选数量", topKField);
         inputArea.add(form, BorderLayout.CENTER);
 
         JPanel actionPanel = new JPanel(new BorderLayout(0, 10));
@@ -137,7 +146,7 @@ public class OptimizationPanel extends JPanel {
         statusLabel.setForeground(ColorTheme.TEXT_SECONDARY);
         progressBar.setIndeterminate(false);
         progressBar.setStringPainted(true);
-        progressBar.setString("Ready");
+        progressBar.setString("就绪");
         progressBar.setForeground(ColorTheme.ACCENT_CYAN);
 
         JPanel buttonGrid = new JPanel(new GridLayout(0, 1, 0, 8));
@@ -172,7 +181,7 @@ public class OptimizationPanel extends JPanel {
         kpiArea.add(createKpiCard("推荐窗口", bestWindowValue, ColorTheme.ACCENT_CYAN));
         kpiArea.add(createKpiCard("推荐桌子", bestTableValue, ColorTheme.ACCENT_CYAN));
         kpiArea.add(createKpiCard("平均等待", avgWaitValue, ColorTheme.ACCENT_YELLOW));
-        kpiArea.add(createKpiCard("综合 Loss", lossValue, ColorTheme.ACCENT_RED));
+        kpiArea.add(createKpiCard("综合损失", lossValue, ColorTheme.ACCENT_RED));
         kpiArea.add(createKpiCard("座位利用率", seatUseValue, ColorTheme.ACCENT_CYAN));
         kpiArea.add(createKpiCard("窗口利用率", windowUseValue, ColorTheme.ACCENT_CYAN));
         return kpiArea;
@@ -180,7 +189,7 @@ public class OptimizationPanel extends JPanel {
 
     private JPanel createTableArea() {
         JPanel tableArea = createCardPanel(new BorderLayout(0, 10));
-        tableArea.add(createTitleLabel("TopK Results"), BorderLayout.NORTH);
+        tableArea.add(createTitleLabel("最优候选方案"), BorderLayout.NORTH);
 
         topKTable.setRowHeight(28);
         topKTable.setFillsViewportHeight(true);
@@ -210,8 +219,8 @@ public class OptimizationPanel extends JPanel {
         JPanel chartArea = new JPanel(new GridLayout(1, 2, 14, 0));
         chartArea.setOpaque(false);
         chartArea.setPreferredSize(new Dimension(0, 190));
-        chartArea.add(createChartCard("Loss Curve", lossCurvePanel));
-        chartArea.add(createChartCard("Window-Table Heatmap", heatmapPanel));
+        chartArea.add(createChartCard("损失值曲线", lossCurvePanel));
+        chartArea.add(createChartCard("窗口-桌子热力图", heatmapPanel));
         return chartArea;
     }
 
@@ -299,7 +308,7 @@ public class OptimizationPanel extends JPanel {
                 progressBar.setMaximum(update.total);
                 progressBar.setValue(update.step);
                 progressBar.setString(update.step + "/" + update.total);
-                statusLabel.setText("寻优中: " + update.step + "/" + update.total);
+                statusLabel.setText("寻优中：" + update.step + "/" + update.total);
                 updateResultPreview(update.results, update.bestResult);
             }
 
@@ -311,8 +320,8 @@ public class OptimizationPanel extends JPanel {
                     if (isCancelled()) {
                         statusLabel.setText("寻优已取消，保留已完成候选结果");
                     } else {
-                        statusLabel.setText("寻优完成: " + result.totalCandidateCount + " candidates / "
-                                + result.totalSimulationCount + " simulations");
+                        statusLabel.setText("寻优完成：" + result.totalCandidateCount + " 个候选方案 / "
+                                + result.totalSimulationCount + " 次仿真");
                     }
                 } catch (CancellationException ex) {
                     statusLabel.setText("寻优已取消，保留已完成候选结果");
@@ -336,12 +345,13 @@ public class OptimizationPanel extends JPanel {
 
     private OptimizeConfig buildOptimizeConfigFromForm() {
         OptimizeConfig config = new OptimizeConfig();
-        config.minWindowCount = parsePositiveInt(minWindowField, "minWindow");
-        config.maxWindowCount = parsePositiveInt(maxWindowField, "maxWindow");
-        config.minTableCount = parsePositiveInt(minTableField, "minTable");
-        config.maxTableCount = parsePositiveInt(maxTableField, "maxTable");
-        config.repeatTimes = parsePositiveInt(repeatTimesField, "repeatTimes");
-        config.topK = parsePositiveInt(topKField, "TopK");
+        config.totalPopulation = parsePositiveInt(totalPopulationField, "就餐人数");
+        config.minWindowCount = parsePositiveInt(minWindowField, "最小窗口数");
+        config.maxWindowCount = parsePositiveInt(maxWindowField, "最大窗口数");
+        config.minTableCount = parsePositiveInt(minTableField, "最小桌子数");
+        config.maxTableCount = parsePositiveInt(maxTableField, "最大桌子数");
+        config.repeatTimes = parsePositiveInt(repeatTimesField, "重复次数");
+        config.topK = parsePositiveInt(topKField, "候选数量");
         config.verboseConsoleLog = false;
         config.runReplayAfterOptimization = false;
         config.validate();
@@ -352,7 +362,7 @@ public class OptimizationPanel extends JPanel {
         try {
             int value = Integer.parseInt(field.getText().trim());
             if (value <= 0) {
-                throw new NumberFormatException(name + " must be positive");
+                throw new NumberFormatException(name + " 必须是正整数");
             }
             return value;
         } catch (NumberFormatException ex) {
@@ -371,10 +381,10 @@ public class OptimizationPanel extends JPanel {
             progressBar.setMaximum(config.totalCandidateCount());
             progressBar.setValue(0);
         }
-        progressBar.setString(running ? "0/" + config.totalCandidateCount() : "Ready");
+        progressBar.setString(running ? "0/" + config.totalCandidateCount() : "就绪");
         if (running) {
-            statusLabel.setText("正在后台运行: " + config.totalCandidateCount() + " candidates / "
-                    + config.totalSimulationCount() + " simulations");
+            statusLabel.setText("正在后台运行：" + config.totalCandidateCount() + " 个候选方案 / "
+                    + config.totalSimulationCount() + " 次仿真");
         }
     }
 
@@ -414,6 +424,9 @@ public class OptimizationPanel extends JPanel {
         lossCurvePanel.setResults(result.allResults);
         heatmapPanel.setResults(result.allResults);
         currentBestResult = best.copyBasic();
+        if (replayContextConsumer != null) {
+            replayContextConsumer.accept(currentBestResult.copyBasic());
+        }
         importBestButton.setEnabled(replayPresetConsumer != null);
         importSelectedTopKButton.setEnabled(replayPresetConsumer != null && !displayedTopKResults.isEmpty());
     }
@@ -456,7 +469,7 @@ public class OptimizationPanel extends JPanel {
     private void updateBestCards(SimRunResult best) {
         bestWindowValue.setText(String.valueOf(best.windowCount));
         bestTableValue.setText(String.valueOf(best.tableCount));
-        avgWaitValue.setText(formatDouble(best.avgWaitTimeMinutes, 2) + " min");
+        avgWaitValue.setText(formatDouble(best.avgWaitTimeMinutes, 2) + " 分钟");
         lossValue.setText(formatDouble(best.loss, 4));
         seatUseValue.setText(formatPercent(best.seatUtilization));
         windowUseValue.setText(formatPercent(best.windowUtilization));
@@ -472,7 +485,7 @@ public class OptimizationPanel extends JPanel {
     private void importSelectedTopKToReplay() {
         int selectedRow = topKTable.getSelectedRow();
         if (selectedRow < 0 || selectedRow >= displayedTopKResults.size() || replayPresetConsumer == null) {
-            JOptionPane.showMessageDialog(this, "请先在 TopK 表格中选择一行", "未选择方案", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this, "请先在候选方案表格中选择一行", "未选择方案", JOptionPane.INFORMATION_MESSAGE);
             return;
         }
         replayPresetConsumer.accept(displayedTopKResults.get(selectedRow).copyBasic());
@@ -538,7 +551,7 @@ public class OptimizationPanel extends JPanel {
             int plotHeight = Math.max(1, getHeight() - top - bottom);
 
             if (results.size() < 2) {
-                drawEmptyMessage(g2, "Run optimization to draw loss trend");
+                drawEmptyMessage(g2, "运行寻优后显示损失趋势");
                 g2.dispose();
                 return;
             }
@@ -570,7 +583,7 @@ public class OptimizationPanel extends JPanel {
             g2.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 11));
             g2.drawString(String.format("%.2f", max), 4, top + 10);
             g2.drawString(String.format("%.2f", min), 4, top + height);
-            g2.drawString("step", left + width - 24, top + height + 22);
+            g2.drawString("步数", left + width - 24, top + height + 22);
         }
 
         private void drawSeries(Graphics2D g2, int left, int top, int width, int height,
@@ -597,11 +610,11 @@ public class OptimizationPanel extends JPanel {
             g2.setColor(ColorTheme.ACCENT_YELLOW);
             g2.fillRect(left, top, 10, 4);
             g2.setColor(ColorTheme.TEXT_SECONDARY);
-            g2.drawString("Loss", left + 16, top + 6);
+            g2.drawString("本轮损失", left + 16, top + 6);
             g2.setColor(ColorTheme.ACCENT_CYAN);
-            g2.fillRect(left + 64, top, 10, 4);
+            g2.fillRect(left + 92, top, 10, 4);
             g2.setColor(ColorTheme.TEXT_SECONDARY);
-            g2.drawString("Best", left + 80, top + 6);
+            g2.drawString("当前最佳", left + 108, top + 6);
         }
     }
 
@@ -625,7 +638,7 @@ public class OptimizationPanel extends JPanel {
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
             if (results.isEmpty()) {
-                drawEmptyMessage(g2, "Run optimization to draw loss heatmap");
+                drawEmptyMessage(g2, "运行寻优后显示损失热力图");
                 g2.dispose();
                 return;
             }
@@ -682,10 +695,10 @@ public class OptimizationPanel extends JPanel {
                                        int left, int top, int width, int height) {
             g2.setColor(ColorTheme.TEXT_SECONDARY);
             g2.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 11));
-            g2.drawString("W " + minWindow, 6, top + 12);
-            g2.drawString("W " + maxWindow, 6, top + height);
-            g2.drawString("T " + minTable, left, top + height + 20);
-            g2.drawString("T " + maxTable, left + width - 38, top + height + 20);
+            g2.drawString("窗 " + minWindow, 6, top + 12);
+            g2.drawString("窗 " + maxWindow, 6, top + height);
+            g2.drawString("桌 " + minTable, left, top + height + 20);
+            g2.drawString("桌 " + maxTable, left + width - 42, top + height + 20);
         }
 
         private Color colorForLoss(double loss, double minLoss, double maxLoss) {

@@ -22,7 +22,7 @@ public class DiningAreaPanel extends JPanel {
         // 【修改点 1】：用透明的空气墙 (EmptyBorder) 作为基础，再在上面加标题
         javax.swing.border.TitledBorder titledBorder = BorderFactory.createTitledBorder(
                 BorderFactory.createEmptyBorder(10, 10, 10, 10), // 隐形的 10 像素护城河
-                "Dining Area Snapshot (就餐区实时快照)"
+                "就餐区实时快照"
         );
 
         // 【修改点 2】：把标题的颜色改成咱们调色盘里的“高级灰”

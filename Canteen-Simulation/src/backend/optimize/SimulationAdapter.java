@@ -18,8 +18,10 @@ public class SimulationAdapter {
 
         try {
             CanteenConfig.RANDOM_SEED = options.randomSeed >= 0 ? options.randomSeed : CanteenConfig.RANDOM_SEED;
-            CanteenConfig.setWindowCount(windowCount);
-            CanteenConfig.setTableCount(tableCount);
+            if (options.totalPopulation > 0) {
+                CanteenConfig.TOTAL_POPULATION = options.totalPopulation;
+            }
+            CanteenConfig.applyOptimizationDecision(snapshot, windowCount, tableCount);
             CanteenConfig.HEADLESS_MODE = options.headless;
             CanteenConfig.CSV_ENABLED = options.csvEnabled;
             CanteenConfig.LISTENER_ENABLED = options.listenerEnabled;
@@ -30,7 +32,8 @@ public class SimulationAdapter {
             ArrivalGenerationResult arrivalResult = arrivalModule.generateArrivalPlan(
                     CanteenConfig.TOTAL_POPULATION,
                     CanteenConfig.SIMULATION_MODE,
-                    CanteenConfig.MEAL_PERIOD
+                    CanteenConfig.MEAL_PERIOD,
+                    !options.headless
             );
 
             SimulationEngine engine = new SimulationEngine(
@@ -62,6 +65,11 @@ public class SimulationAdapter {
             result.runtimeMs = System.currentTimeMillis() - start;
             result.randomSeed = CanteenConfig.RANDOM_SEED;
             result.mealMode = CanteenConfig.SIMULATION_MODE + ":" + CanteenConfig.MEAL_PERIOD;
+            result.requestedPopulation = CanteenConfig.TOTAL_POPULATION;
+            result.openDuration = CanteenConfig.OPEN_DURATION;
+            result.probSolo = CanteenConfig.PROB_SOLO;
+            result.simulationModeCode = CanteenConfig.SIMULATION_MODE.getCode();
+            result.mealPeriodCode = CanteenConfig.MEAL_PERIOD.getCode();
             return result;
         } finally {
             CanteenConfig.restore(snapshot);

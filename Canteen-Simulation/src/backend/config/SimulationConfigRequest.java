@@ -154,6 +154,7 @@ public class SimulationConfigRequest {
 
     public void setProbSolo(double probSolo) {
         this.probSolo = probSolo;
+        distributeRemainingGroupProbabilities();
     }
 
     public double getProbDuo() {
@@ -218,5 +219,19 @@ public class SimulationConfigRequest {
 
     public void setWindowAvgServeTime(int[] windowAvgServeTime) {
         this.windowAvgServeTime = windowAvgServeTime;
+    }
+
+    /**
+     * The UI exposes only the solo probability. Keep the companion group-size
+     * probabilities consistent even if callers set only probSolo.
+     */
+    private void distributeRemainingGroupProbabilities() {
+        double boundedSolo = Math.max(0.0, Math.min(1.0, this.probSolo));
+        this.probSolo = boundedSolo;
+
+        double remainder = 1.0 - boundedSolo;
+        this.probDuo = remainder * 0.5;
+        this.probTrio = remainder * 0.3;
+        this.probTeam = 1.0 - boundedSolo - this.probDuo - this.probTrio;
     }
 }
