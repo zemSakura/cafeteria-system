@@ -15,6 +15,13 @@ public class SimulationConfigDTO {
     // 【新增】：对接后端的新维度
     public String simulationMode; // "singlePeriod" 或 "fullDay"
     public String mealPeriod;     // "breakfast", "lunch", "dinner"
+    public boolean lockedFromOptimization = false;
+    public int[] lockedWindowDistances;
+    public int[] lockedWindowAvgServeTime;
+    public int minWindowCount = 1;
+    public int maxWindowCount = 1;
+    public int minTableCount = 1;
+    public int maxTableCount = 200;
 
     // 空构造函数（必须有，为了方便后续的 JSON 自动解析）
     public SimulationConfigDTO() {}

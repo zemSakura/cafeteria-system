@@ -87,11 +87,17 @@ public class GridSearchOptimizer {
             if (isCancelled(cancellationChecker)) {
                 return null;
             }
-            long seed = config.baseRandomSeed + step * 1000L + i;
-            SimRunResult r = adapter.runOnce(windowCount, tableCount, SimRunOptions.optimize(seed));
+            long seed = deriveRunSeed(config.baseRandomSeed, windowCount, tableCount, i);
+            SimRunResult r = adapter.runOnce(windowCount, tableCount, SimRunOptions.optimize(seed, config.totalPopulation));
             averager.add(r);
         }
-        return averager.average();
+        SimRunResult average = averager.average();
+        average.randomSeed = deriveRunSeed(config.baseRandomSeed, windowCount, tableCount, config.repeatTimes);
+        average.requestedPopulation = config.totalPopulation;
+        applySearchRange(average, config);
+        average.baseRandomSeed = config.baseRandomSeed;
+        average.repeatTimes = config.repeatTimes;
+        return average;
     }
 
     private boolean isCancelled(CancellationChecker cancellationChecker) {
@@ -100,23 +106,38 @@ public class GridSearchOptimizer {
     }
 
     private ReplayResult runReplay(SimRunResult best, OptimizeConfig config) {
-        long seed = config.baseRandomSeed + 999999L;
-        SimRunOptions options = SimRunOptions.replay(seed, config.replaySnapshotIntervalSeconds);
+        long seed = deriveRunSeed(config.baseRandomSeed, best.windowCount, best.tableCount, config.repeatTimes);
+        SimRunOptions options = SimRunOptions.replay(seed, config.replaySnapshotIntervalSeconds, config.totalPopulation);
         adapter.runOnce(best.windowCount, best.tableCount, options);
         return adapter.getLastReplayResult();
     }
 
+    private long deriveRunSeed(long baseSeed, int windowCount, int tableCount, int repeatIndex) {
+        long seed = baseSeed;
+        seed ^= 0x9E3779B97F4A7C15L + windowCount * 1000003L;
+        seed ^= Long.rotateLeft(tableCount * 10007L, 21);
+        seed ^= Long.rotateLeft(repeatIndex * 1009L, 42);
+        return seed;
+    }
+
+    private void applySearchRange(SimRunResult result, OptimizeConfig config) {
+        result.minWindowCount = config.minWindowCount;
+        result.maxWindowCount = config.maxWindowCount;
+        result.minTableCount = config.minTableCount;
+        result.maxTableCount = config.maxTableCount;
+    }
+
     private void printStepLog(int step, int total, SimRunResult r) {
         System.out.println(
-                "[Optimize] step " + step + "/" + total
-                        + " | window=" + r.windowCount
-                        + " | table=" + r.tableCount
-                        + " | wait=" + String.format("%.2f", r.avgWaitTimeMinutes) + "min"
-                        + " | maxQ=" + r.maxQueueLength
-                        + " | seatUse=" + String.format("%.2f", r.seatUtilization)
-                        + " | abandon=" + String.format("%.2f", r.abandonRate)
-                        + " | loss=" + String.format("%.4f", r.loss)
-                        + " | best=" + String.format("%.4f", r.currentBestLoss)
+                "[寻优] 步骤 " + step + "/" + total
+                        + " | 窗口=" + r.windowCount
+                        + " | 桌子=" + r.tableCount
+                        + " | 等待=" + String.format("%.2f", r.avgWaitTimeMinutes) + "分钟"
+                        + " | 最大排队=" + r.maxQueueLength
+                        + " | 座位利用率=" + String.format("%.2f", r.seatUtilization)
+                        + " | 放弃率=" + String.format("%.2f", r.abandonRate)
+                        + " | 损失值=" + String.format("%.4f", r.loss)
+                        + " | 当前最佳=" + String.format("%.4f", r.currentBestLoss)
         );
     }
 }

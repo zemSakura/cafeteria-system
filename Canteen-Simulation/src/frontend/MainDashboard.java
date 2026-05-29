@@ -16,6 +16,7 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
     private static QueueAreaPanel myQueuePanel;
 
     private static JButton startButton;
+    private static JButton manualReplayButton;
     private static JButton stopButton;
     private static JLabel phaseLabel;
     private static final String VIEW_OPTIMIZATION = "optimization";
@@ -23,6 +24,7 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
     private static CardLayout dashboardCardLayout;
     private static JPanel dashboardCards;
     private static SimulationConfigDTO replayPresetConfig;
+    private static SimRunResult latestOptimizationContext;
 
     private static MainDashboard frame;
 
@@ -151,7 +153,8 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         dashboardCardLayout = new CardLayout();
         dashboardCards = new JPanel(dashboardCardLayout);
         dashboardCards.setBackground(ColorTheme.BG_MAIN);
-        dashboardCards.add(new OptimizationPanel(MainDashboard::applyOptimizationPreset), VIEW_OPTIMIZATION);
+        dashboardCards.add(new OptimizationPanel(MainDashboard::applyOptimizationPreset,
+                MainDashboard::rememberOptimizationContext), VIEW_OPTIMIZATION);
         dashboardCards.add(replayPanel, VIEW_REPLAY);
         frame.add(dashboardCards, BorderLayout.CENTER);
         dashboardCardLayout.show(dashboardCards, VIEW_OPTIMIZATION);
@@ -183,20 +186,55 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         button.setBackground(accentColor);
     }
 
+    private static void rememberOptimizationContext(SimRunResult result) {
+        latestOptimizationContext = result == null ? null : result.copyBasic();
+        if (manualReplayButton != null) {
+            manualReplayButton.setEnabled(latestOptimizationContext != null);
+            manualReplayButton.setToolTipText(latestOptimizationContext == null
+                    ? "请先完成一次寻优"
+                    : "在最近一次寻优范围内手动选择复盘参数");
+        }
+    }
+
     private static void applyOptimizationPreset(SimRunResult result) {
-        SimulationConfigDTO preset = new SimulationConfigDTO();
-        preset.totalTables = result.tableCount;
-        preset.windowCount = result.windowCount;
-        preset.randomSeed = result.randomSeed == 0L ? preset.randomSeed : result.randomSeed;
-        preset.simulationMode = "singlePeriod";
-        preset.mealPeriod = "lunch";
+        latestOptimizationContext = result.copyBasic();
+        SimulationConfigDTO preset = buildLockedReplayConfig(result);
         replayPresetConfig = preset;
+        if (startButton != null) {
+            startButton.setEnabled(true);
+            startButton.setToolTipText("使用已导入的复盘方案启动仿真");
+        }
+        if (manualReplayButton != null) {
+            manualReplayButton.setEnabled(true);
+        }
 
         dashboardCardLayout.show(dashboardCards, VIEW_REPLAY);
         JOptionPane.showMessageDialog(frame,
-                "已导入复盘初始化参数：窗口 " + result.windowCount + "，桌子 " + result.tableCount,
+                "已导入复盘参数：窗口 " + result.windowCount + "，桌子 " + result.tableCount
+                        + "。复盘参数已锁定，请确认后运行。",
                 "导入成功",
                 JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private static SimulationConfigDTO buildLockedReplayConfig(SimRunResult result) {
+        SimulationConfigDTO preset = new SimulationConfigDTO();
+        boolean hasOptimizationMetadata = result.requestedPopulation > 0;
+        preset.totalTables = result.tableCount;
+        preset.windowCount = result.windowCount;
+        preset.totalStudents = result.requestedPopulation > 0 ? result.requestedPopulation : preset.totalStudents;
+        preset.openDuration = result.openDuration > 0 ? result.openDuration : CanteenConfig.OPEN_DURATION;
+        preset.probSolo = hasOptimizationMetadata ? result.probSolo : CanteenConfig.PROB_SOLO;
+        preset.randomSeed = result.randomSeed == 0L ? preset.randomSeed : result.randomSeed;
+        preset.simulationMode = result.simulationModeCode == null ? CanteenConfig.SIMULATION_MODE.getCode() : result.simulationModeCode;
+        preset.mealPeriod = result.mealPeriodCode == null ? CanteenConfig.MEAL_PERIOD.getCode() : result.mealPeriodCode;
+        preset.lockedFromOptimization = true;
+        preset.lockedWindowDistances = CanteenConfig.WINDOW_DISTANCES.clone();
+        preset.lockedWindowAvgServeTime = CanteenConfig.WINDOW_AVG_SERVE_TIME.clone();
+        preset.minWindowCount = result.minWindowCount > 0 ? result.minWindowCount : result.windowCount;
+        preset.maxWindowCount = result.maxWindowCount > 0 ? result.maxWindowCount : result.windowCount;
+        preset.minTableCount = result.minTableCount > 0 ? result.minTableCount : result.tableCount;
+        preset.maxTableCount = result.maxTableCount > 0 ? result.maxTableCount : result.tableCount;
+        return preset;
     }
 
     private static JPanel createConfigPanel() {
@@ -205,9 +243,15 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         panel.setBorder(BorderFactory.createEmptyBorder(10, 12, 10, 12));
 
         startButton = new JButton("▶ 开始仿真");
+        manualReplayButton = new JButton("手动导入复盘参数");
         stopButton = new JButton("■ 停止仿真");
+        startButton.setEnabled(false);
+        startButton.setToolTipText("请先导入一份复盘参数");
+        manualReplayButton.setEnabled(false);
+        manualReplayButton.setToolTipText("请先完成一次寻优");
         stopButton.setEnabled(false);
 
+        panel.add(manualReplayButton);
         panel.add(startButton);
         panel.add(stopButton);
 
@@ -216,7 +260,18 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         phaseLabel.setForeground(ColorTheme.TEXT_SECONDARY);
         panel.add(phaseLabel);
 
+        manualReplayButton.addActionListener(e -> openManualReplayImportDialog());
+
         startButton.addActionListener(e -> {
+            if (replayPresetConfig == null || !replayPresetConfig.lockedFromOptimization) {
+                JOptionPane.showMessageDialog(frame,
+                        "请先从寻优结果导入一个候选方案，或点击“手动导入复盘参数”。",
+                        "复盘参数未锁定",
+                        JOptionPane.INFORMATION_MESSAGE);
+                startButton.setEnabled(false);
+                return;
+            }
+
             SimulationConfigDialog configDialog = new SimulationConfigDialog(frame, replayPresetConfig);
             configDialog.setVisible(true);
 
@@ -263,6 +318,12 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
                 request.setTotalPopulation(dto.totalStudents);
                 request.setSimulationMode(dto.simulationMode);
                 request.setMealPeriod(dto.mealPeriod);
+                if (dto.lockedFromOptimization
+                        && dto.lockedWindowDistances != null
+                        && dto.lockedWindowAvgServeTime != null) {
+                    request.setWindowDistances(resizeLockedWindowDistances(dto.lockedWindowDistances, dto.windowCount));
+                    request.setWindowAvgServeTime(resizeLockedServeTimes(dto.lockedWindowAvgServeTime, dto.windowCount));
+                }
 
                 // 强制更新后端的全局配置
                 backend.config.CanteenConfig.updateAllConfigs(request);
@@ -289,7 +350,7 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
                 if ("fullDay".equals(dto.simulationMode)) {
                     appendLog(">>> 仿真模式: 全天无缝聚合仿真 (早中晚连续时间轴)");
                 } else {
-                    appendLog(">>> 仿真模式: 单时段仿真 | 目标餐段: " + dto.mealPeriod);
+                    appendLog(">>> 仿真模式: 单时段仿真 | 目标餐段: " + displayMealPeriod(dto.mealPeriod));
                 }
                 appendLog(">>> 正在点火，启动正式仿真引擎...");
 
@@ -329,7 +390,7 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
                         stopButton.setEnabled(true);
                     } catch (Exception ex) {
                         appendLog(">>> [错误] 启动失败：" + ex.getMessage());
-                        startButton.setEnabled(true);
+                        startButton.setEnabled(replayPresetConfig != null && replayPresetConfig.lockedFromOptimization);
                         stopButton.setEnabled(false);
                         ex.printStackTrace();
                     }
@@ -359,7 +420,7 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
                 appendLog(">>> [系统] 收到停止指令，正在关闭引擎...");
             }
 
-            startButton.setEnabled(true);
+            startButton.setEnabled(replayPresetConfig != null && replayPresetConfig.lockedFromOptimization);
             stopButton.setEnabled(false);
             phaseLabel.setText(" ");
             phaseLabel.setForeground(ColorTheme.TEXT_SECONDARY);
@@ -368,12 +429,93 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         return panel;
     }
 
+    private static void openManualReplayImportDialog() {
+        if (latestOptimizationContext == null) {
+            JOptionPane.showMessageDialog(frame,
+                    "请先在寻优模式中完成一次寻优，系统需要使用该次寻优的窗口和桌子范围。",
+                    "缺少寻优范围",
+                    JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        JTextField windowField = new JTextField(String.valueOf(latestOptimizationContext.windowCount), 8);
+        JTextField tableField = new JTextField(String.valueOf(latestOptimizationContext.tableCount), 8);
+        JPanel form = new JPanel(new GridLayout(0, 2, 10, 10));
+        form.add(new JLabel("窗口数范围："
+                + latestOptimizationContext.minWindowCount + " - " + latestOptimizationContext.maxWindowCount));
+        form.add(windowField);
+        form.add(new JLabel("桌子数范围："
+                + latestOptimizationContext.minTableCount + " - " + latestOptimizationContext.maxTableCount));
+        form.add(tableField);
+        form.add(new JLabel("就餐人数："));
+        form.add(new JLabel(String.valueOf(latestOptimizationContext.requestedPopulation)));
+        form.add(new JLabel("仿真时长："));
+        form.add(new JLabel(latestOptimizationContext.openDuration + " 分钟"));
+
+        int result = JOptionPane.showConfirmDialog(
+                frame,
+                form,
+                "手动导入复盘参数",
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE
+        );
+        if (result != JOptionPane.OK_OPTION) {
+            return;
+        }
+
+        try {
+            int windowCount = Integer.parseInt(windowField.getText().trim());
+            int tableCount = Integer.parseInt(tableField.getText().trim());
+            validateManualReplayRange(windowCount, tableCount, latestOptimizationContext);
+
+            SimRunResult selected = latestOptimizationContext.copyBasic();
+            selected.windowCount = windowCount;
+            selected.tableCount = tableCount;
+            if (selected.baseRandomSeed != 0L && selected.repeatTimes > 0) {
+                selected.randomSeed = deriveReplaySeed(selected.baseRandomSeed, windowCount, tableCount, selected.repeatTimes);
+            }
+            applyOptimizationPreset(selected);
+        } catch (NumberFormatException ex) {
+            JOptionPane.showMessageDialog(frame, "窗口数和桌子数必须是整数。", "格式错误", JOptionPane.ERROR_MESSAGE);
+        } catch (IllegalArgumentException ex) {
+            JOptionPane.showMessageDialog(frame, ex.getMessage(), "参数越界", JOptionPane.WARNING_MESSAGE);
+        }
+    }
+
+    private static void validateManualReplayRange(int windowCount, int tableCount, SimRunResult context) {
+        if (windowCount < context.minWindowCount || windowCount > context.maxWindowCount) {
+            throw new IllegalArgumentException("窗口数必须在寻优范围 "
+                    + context.minWindowCount + " 到 " + context.maxWindowCount + " 之间。");
+        }
+        if (tableCount < context.minTableCount || tableCount > context.maxTableCount) {
+            throw new IllegalArgumentException("桌子数必须在寻优范围 "
+                    + context.minTableCount + " 到 " + context.maxTableCount + " 之间。");
+        }
+    }
+
+    private static long deriveReplaySeed(long baseSeed, int windowCount, int tableCount, int repeatIndex) {
+        long seed = baseSeed;
+        seed ^= 0x9E3779B97F4A7C15L + windowCount * 1000003L;
+        seed ^= Long.rotateLeft(tableCount * 10007L, 21);
+        seed ^= Long.rotateLeft(repeatIndex * 1009L, 42);
+        return seed;
+    }
+
     private static void applyConfig(SimulationConfigDTO dto) {
         CanteenConfig.TOTAL_TABLES = dto.totalTables;
         CanteenConfig.OPEN_DURATION = dto.openDuration;
         CanteenConfig.RANDOM_SEED = dto.randomSeed;
 
-        CanteenConfig.initWindowsConfig(dto.windowCount);
+        if (dto.lockedFromOptimization
+                && dto.lockedWindowDistances != null
+                && dto.lockedWindowAvgServeTime != null) {
+            CanteenConfig.updateWindowConfigs(
+                    resizeLockedWindowDistances(dto.lockedWindowDistances, dto.windowCount),
+                    resizeLockedServeTimes(dto.lockedWindowAvgServeTime, dto.windowCount)
+            );
+        } else {
+            CanteenConfig.initWindowsConfig(dto.windowCount);
+        }
 
         CanteenConfig.PROB_SOLO = dto.probSolo;
         double remain = 1.0 - dto.probSolo;
@@ -384,9 +526,46 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         CanteenConfig.validate();
     }
 
+    private static int[] resizeLockedWindowDistances(int[] lockedDistances, int windowCount) {
+        int[] source = lockedDistances == null || lockedDistances.length == 0
+                ? CanteenConfig.DEFAULT_WINDOW_DISTANCES
+                : lockedDistances;
+        int[] result = new int[windowCount];
+        for (int i = 0; i < windowCount; i++) {
+            if (i < source.length) {
+                result[i] = source[i];
+            } else {
+                int previous = i == 0 ? 10 : result[i - 1];
+                result[i] = previous + 5;
+            }
+        }
+        return result;
+    }
+
+    private static int[] resizeLockedServeTimes(int[] lockedServeTimes, int windowCount) {
+        int[] source = lockedServeTimes == null || lockedServeTimes.length == 0
+                ? CanteenConfig.DEFAULT_WINDOW_AVG_SERVE_TIME
+                : lockedServeTimes;
+        int[] result = new int[windowCount];
+        for (int i = 0; i < windowCount; i++) {
+            result[i] = Math.max(1, source[i % source.length]);
+        }
+        return result;
+    }
+
+    private static String displayMealPeriod(String code) {
+        if ("breakfast".equals(code)) {
+            return "早餐";
+        }
+        if ("dinner".equals(code)) {
+            return "晚餐";
+        }
+        return "午餐";
+    }
+
     private static JPanel createLogAreaPanel() {
         JPanel panel = new JPanel(new BorderLayout());
-        panel.setBorder(BorderFactory.createTitledBorder("Real-time Logs (实时日志)"));
+        panel.setBorder(BorderFactory.createTitledBorder("实时日志"));
 
 
         logTextArea = new JTextArea(8, 20);
@@ -505,7 +684,7 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
     @Override
     public void onSimulationFinished() {
         SwingUtilities.invokeLater(() -> {
-            startButton.setEnabled(true);
+            startButton.setEnabled(replayPresetConfig != null && replayPresetConfig.lockedFromOptimization);
             stopButton.setEnabled(false);
             phaseLabel.setText(" ● 仿真结束");
             phaseLabel.setForeground(ColorTheme.TEXT_SECONDARY);

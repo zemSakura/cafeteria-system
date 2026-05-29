@@ -30,6 +30,6 @@ public enum SimulationMode {
             return SINGLE_PERIOD;
         }
 
-        throw new IllegalArgumentException("Unsupported simulationMode: " + code);
+        throw new IllegalArgumentException("不支持的仿真模式: " + code);
     }
 }

@@ -167,6 +167,30 @@ public class CanteenConfig {
         validate();
     }
 
+    /**
+     * Apply only the optimizer decision variables while keeping the captured
+     * environment profile fixed. The optimizer may change window/table counts,
+     * but it must not tune service-time distribution or other physical inputs.
+     */
+    public static synchronized void applyOptimizationDecision(CanteenConfigSnapshot lockedEnvironment,
+                                                              int windowCount,
+                                                              int tableCount) {
+        if (lockedEnvironment == null) {
+            throw new IllegalArgumentException("lockedEnvironment cannot be null");
+        }
+        if (windowCount <= 0) {
+            throw new IllegalArgumentException("windowCount must be greater than 0");
+        }
+        if (tableCount <= 0) {
+            throw new IllegalArgumentException("table count must be greater than 0");
+        }
+
+        TOTAL_TABLES = tableCount;
+        WINDOW_DISTANCES = resizeDistanceProfile(lockedEnvironment.windowDistances, windowCount);
+        WINDOW_AVG_SERVE_TIME = resizeServeTimeProfile(lockedEnvironment.windowAvgServeTime, windowCount);
+        validate();
+    }
+
     public static synchronized void initWindowsConfig(int windowCount) {
         if (windowCount <= 0) {
             throw new IllegalArgumentException("windowCount must be greater than 0");
@@ -207,6 +231,33 @@ public class CanteenConfig {
 
     private static int randomBetweenInclusive(Random random, int min, int max) {
         return min + random.nextInt(max - min + 1);
+    }
+
+    private static int[] resizeDistanceProfile(int[] lockedDistances, int windowCount) {
+        int[] source = lockedDistances == null || lockedDistances.length == 0
+                ? DEFAULT_WINDOW_DISTANCES
+                : lockedDistances;
+        int[] result = new int[windowCount];
+        for (int i = 0; i < windowCount; i++) {
+            if (i < source.length) {
+                result[i] = source[i];
+            } else {
+                int previous = i == 0 ? 10 : result[i - 1];
+                result[i] = previous + 5;
+            }
+        }
+        return result;
+    }
+
+    private static int[] resizeServeTimeProfile(int[] lockedServeTimes, int windowCount) {
+        int[] source = lockedServeTimes == null || lockedServeTimes.length == 0
+                ? DEFAULT_WINDOW_AVG_SERVE_TIME
+                : lockedServeTimes;
+        int[] result = new int[windowCount];
+        for (int i = 0; i < windowCount; i++) {
+            result[i] = Math.max(1, source[i % source.length]);
+        }
+        return result;
     }
 
     public static synchronized void updateWindowConfigs(int[] distances, int[] serveTimes) {
@@ -355,6 +406,7 @@ public class CanteenConfig {
             throw new IllegalArgumentException("invalid dining time config");
         }
 
+        normalizeGroupProbabilities();
         double groupProbabilitySum = PROB_SOLO + PROB_DUO + PROB_TRIO + PROB_TEAM;
         if (Math.abs(groupProbabilitySum - 1.0) > 1e-9) {
             throw new IllegalArgumentException("group probabilities must sum to 1.0, current: " + groupProbabilitySum);
@@ -398,6 +450,25 @@ public class CanteenConfig {
         if (value < 0.0 || value > 1.0) {
             throw new IllegalArgumentException(name + " must be between 0 and 1");
         }
+    }
+
+    private static void normalizeGroupProbabilities() {
+        if (PROB_SOLO < 0.0 || PROB_DUO < 0.0 || PROB_TRIO < 0.0 || PROB_TEAM < 0.0) {
+            throw new IllegalArgumentException("group probabilities cannot be negative");
+        }
+
+        double sum = PROB_SOLO + PROB_DUO + PROB_TRIO + PROB_TEAM;
+        if (sum <= 0.0) {
+            throw new IllegalArgumentException("group probabilities must have a positive sum");
+        }
+        if (Math.abs(sum - 1.0) <= 1e-9) {
+            return;
+        }
+
+        PROB_SOLO /= sum;
+        PROB_DUO /= sum;
+        PROB_TRIO /= sum;
+        PROB_TEAM /= sum;
     }
 
     /** Added for backend auto-optimization: capture all static runtime config before a headless run. */
