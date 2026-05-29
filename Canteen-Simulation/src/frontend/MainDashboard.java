@@ -153,7 +153,6 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         dashboardCards.setBackground(ColorTheme.BG_MAIN);
         dashboardCards.add(new OptimizationPanel(MainDashboard::applyOptimizationPreset), VIEW_OPTIMIZATION);
         dashboardCards.add(replayPanel, VIEW_REPLAY);
-
         frame.add(dashboardCards, BorderLayout.CENTER);
         dashboardCardLayout.show(dashboardCards, VIEW_OPTIMIZATION);
         frame.setLocationRelativeTo(null);
