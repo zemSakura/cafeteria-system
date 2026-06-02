@@ -1,64 +1,25 @@
 package backend.optimize;
 
 public class LossConfig {
-    public double costWeight = 0.15;
-    public double experienceWeight = 1.00;
-    public double waitWeight = 0.45;
-    public double queueWeight = 0.30;
-    public double abandonWeight = 0.15;
-    public double utilizationWeight = 0.10;
-    public double windowCost = 1.0;
-    public double tableCost = 0.08;
-    public double maxAcceptCost = 20.0;
-    public double maxAcceptWaitMinutes = 12.0;
-    public double maxAcceptQueueLength = 80.0;
-    public double maxAcceptAbandonRate = 0.20;
-    public double targetSeatUtilization = 0.80;
-    public double lowFinishRatePenalty = 3.0;
-    public double minAcceptFinishRate = 0.95;
-    public double hardWaitThresholdMinutes = 3.0;
-    public double hardQueueThresholdLength = 50.0;
-    public double waitPenaltyScaleMinutes = 1.0;
-    public double queuePenaltyScaleLength = 10.0;
-    public double waitExponentialPenaltyWeight = 2.0;
-    public double queueExponentialPenaltyWeight = 2.0;
-    public double maxExponentialPenaltyInput = 12.0;
+    // === 1. 线性成本系数 (Resource Units) ===
+    public double windowCost = 20.0;  // 窗口极其昂贵：占地、人工、设备
+    public double tableCost = 1.0;    // 桌子相对便宜：纯占地
+
+    // === 2. 体验容忍红线 (Hard Thresholds) ===
+    public double hardWaitThresholdMinutes = 5.0;  // 超过 5 分钟，学生开始焦躁
+    public double hardAbandonRateThreshold = 0.05; // 超过 5% 的人因排队放弃就餐，属于严重运营事故
+
+    // === 3. 二次惩罚系数 (Quadratic Penalty Weights) ===
+    public double waitPenaltyWeight = 50.0;    // 等待超时的平方放大倍率
+    public double abandonPenaltyWeight = 5000.0; // 放弃率的平方放大倍率 (极其严格)
 
     public void validate() {
-        if (costWeight < 0) costWeight = 0.0;
-        if (experienceWeight < 0) experienceWeight = 0.0;
-        if (waitWeight < 0) waitWeight = 0.0;
-        if (queueWeight < 0) queueWeight = 0.0;
-        if (abandonWeight < 0) abandonWeight = 0.0;
-        if (utilizationWeight < 0) utilizationWeight = 0.0;
-
-        double sum = waitWeight + queueWeight + abandonWeight + utilizationWeight;
-        if (Math.abs(sum - 1.0) > 0.0001 && sum > 0.0) {
-            waitWeight /= sum;
-            queueWeight /= sum;
-            abandonWeight /= sum;
-            utilizationWeight /= sum;
-        }
-        if (sum <= 0.0) {
-            waitWeight = 0.45;
-            queueWeight = 0.30;
-            abandonWeight = 0.15;
-            utilizationWeight = 0.10;
-        }
-
-        if (maxAcceptCost <= 0) maxAcceptCost = 20.0;
-        if (maxAcceptWaitMinutes <= 0) maxAcceptWaitMinutes = 12.0;
-        if (maxAcceptQueueLength <= 0) maxAcceptQueueLength = 80.0;
-        if (maxAcceptAbandonRate <= 0) maxAcceptAbandonRate = 0.20;
-        if (targetSeatUtilization <= 0 || targetSeatUtilization > 1) targetSeatUtilization = 0.80;
-        if (minAcceptFinishRate < 0.0 || minAcceptFinishRate > 1.0) minAcceptFinishRate = 0.95;
-        if (lowFinishRatePenalty < 0.0) lowFinishRatePenalty = 0.0;
-        if (hardWaitThresholdMinutes <= 0) hardWaitThresholdMinutes = 3.0;
-        if (hardQueueThresholdLength <= 0) hardQueueThresholdLength = 50.0;
-        if (waitPenaltyScaleMinutes <= 0) waitPenaltyScaleMinutes = 1.0;
-        if (queuePenaltyScaleLength <= 0) queuePenaltyScaleLength = 10.0;
-        if (waitExponentialPenaltyWeight < 0.0) waitExponentialPenaltyWeight = 0.0;
-        if (queueExponentialPenaltyWeight < 0.0) queueExponentialPenaltyWeight = 0.0;
-        if (maxExponentialPenaltyInput <= 0.0) maxExponentialPenaltyInput = 12.0;
+        // 防止负数输入导致逻辑崩溃
+        if (windowCost < 0) windowCost = 20.0;
+        if (tableCost < 0) tableCost = 1.0;
+        if (hardWaitThresholdMinutes <= 0) hardWaitThresholdMinutes = 5.0;
+        if (hardAbandonRateThreshold <= 0) hardAbandonRateThreshold = 0.05;
+        if (waitPenaltyWeight < 0) waitPenaltyWeight = 50.0;
+        if (abandonPenaltyWeight < 0) abandonPenaltyWeight = 5000.0;
     }
 }

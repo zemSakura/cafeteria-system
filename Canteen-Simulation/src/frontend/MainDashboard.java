@@ -16,14 +16,14 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
     private static QueueAreaPanel myQueuePanel;
 
     private static JButton startButton;
-    private static JButton manualReplayButton;
+    private static JButton manualSimulationPresetButton;
     private static JButton stopButton;
     private static JLabel phaseLabel;
     private static final String VIEW_OPTIMIZATION = "optimization";
-    private static final String VIEW_REPLAY = "replay";
+    private static final String VIEW_SIMULATION = "simulation";
     private static CardLayout dashboardCardLayout;
     private static JPanel dashboardCards;
-    private static SimulationConfigDTO replayPresetConfig;
+    private static SimulationConfigDTO simulationPresetConfig;
     private static SimRunResult latestOptimizationContext;
 
     private static MainDashboard frame;
@@ -145,17 +145,17 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         // 将初始分割线设为 0.75 的比例，避免硬编码像素导致在不同屏幕上被截断
         splitPane.setDividerLocation(0.75);
 
-        JPanel replayPanel = new JPanel(new BorderLayout(10, 10));
-        replayPanel.setBackground(ColorTheme.BG_MAIN);
-        replayPanel.add(createConfigPanel(), BorderLayout.NORTH);
-        replayPanel.add(splitPane, BorderLayout.CENTER);
+        JPanel simulationPanel = new JPanel(new BorderLayout(10, 10));
+        simulationPanel.setBackground(ColorTheme.BG_MAIN);
+        simulationPanel.add(createConfigPanel(), BorderLayout.NORTH);
+        simulationPanel.add(splitPane, BorderLayout.CENTER);
 
         dashboardCardLayout = new CardLayout();
         dashboardCards = new JPanel(dashboardCardLayout);
         dashboardCards.setBackground(ColorTheme.BG_MAIN);
         dashboardCards.add(new OptimizationPanel(MainDashboard::applyOptimizationPreset,
                 MainDashboard::rememberOptimizationContext), VIEW_OPTIMIZATION);
-        dashboardCards.add(replayPanel, VIEW_REPLAY);
+        dashboardCards.add(simulationPanel, VIEW_SIMULATION);
         frame.add(dashboardCards, BorderLayout.CENTER);
         dashboardCardLayout.show(dashboardCards, VIEW_OPTIMIZATION);
         frame.setLocationRelativeTo(null);
@@ -168,15 +168,15 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         panel.setBorder(BorderFactory.createEmptyBorder(0, 6, 0, 6));
 
         JButton optimizeViewButton = new JButton("寻优模式");
-        JButton replayViewButton = new JButton("复盘模式");
+        JButton simulationViewButton = new JButton("仿真模式");
         styleNavButton(optimizeViewButton, ColorTheme.ACCENT_CYAN);
-        styleNavButton(replayViewButton, ColorTheme.ACCENT_YELLOW);
+        styleNavButton(simulationViewButton, ColorTheme.ACCENT_YELLOW);
 
         optimizeViewButton.addActionListener(e -> dashboardCardLayout.show(dashboardCards, VIEW_OPTIMIZATION));
-        replayViewButton.addActionListener(e -> dashboardCardLayout.show(dashboardCards, VIEW_REPLAY));
+        simulationViewButton.addActionListener(e -> dashboardCardLayout.show(dashboardCards, VIEW_SIMULATION));
 
         panel.add(optimizeViewButton);
-        panel.add(replayViewButton);
+        panel.add(simulationViewButton);
         return panel;
     }
 
@@ -188,35 +188,35 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
 
     private static void rememberOptimizationContext(SimRunResult result) {
         latestOptimizationContext = result == null ? null : result.copyBasic();
-        if (manualReplayButton != null) {
-            manualReplayButton.setEnabled(latestOptimizationContext != null);
-            manualReplayButton.setToolTipText(latestOptimizationContext == null
+        if (manualSimulationPresetButton != null) {
+            manualSimulationPresetButton.setEnabled(latestOptimizationContext != null);
+            manualSimulationPresetButton.setToolTipText(latestOptimizationContext == null
                     ? "请先完成一次寻优"
-                    : "在最近一次寻优范围内手动选择复盘参数");
+                    : "在最近一次寻优范围内手动选择仿真参数");
         }
     }
 
     private static void applyOptimizationPreset(SimRunResult result) {
         latestOptimizationContext = result.copyBasic();
-        SimulationConfigDTO preset = buildLockedReplayConfig(result);
-        replayPresetConfig = preset;
+        SimulationConfigDTO preset = buildLockedSimulationConfig(result);
+        simulationPresetConfig = preset;
         if (startButton != null) {
             startButton.setEnabled(true);
-            startButton.setToolTipText("使用已导入的复盘方案启动仿真");
+            startButton.setToolTipText("使用已导入的最佳方案启动仿真");
         }
-        if (manualReplayButton != null) {
-            manualReplayButton.setEnabled(true);
+        if (manualSimulationPresetButton != null) {
+            manualSimulationPresetButton.setEnabled(true);
         }
 
-        dashboardCardLayout.show(dashboardCards, VIEW_REPLAY);
+        dashboardCardLayout.show(dashboardCards, VIEW_SIMULATION);
         JOptionPane.showMessageDialog(frame,
-                "已导入复盘参数：窗口 " + result.windowCount + "，桌子 " + result.tableCount
-                        + "。复盘参数已锁定，请确认后运行。",
+                "已导入仿真参数：窗口 " + result.windowCount + "，桌子 " + result.tableCount
+                        + "。参数已锁定，请确认后运行。",
                 "导入成功",
                 JOptionPane.INFORMATION_MESSAGE);
     }
 
-    private static SimulationConfigDTO buildLockedReplayConfig(SimRunResult result) {
+    private static SimulationConfigDTO buildLockedSimulationConfig(SimRunResult result) {
         SimulationConfigDTO preset = new SimulationConfigDTO();
         boolean hasOptimizationMetadata = result.requestedPopulation > 0;
         preset.totalTables = result.tableCount;
@@ -242,16 +242,16 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         panel.setBackground(ColorTheme.BG_CARD);
         panel.setBorder(BorderFactory.createEmptyBorder(10, 12, 10, 12));
 
-        startButton = new JButton("▶ 开始仿真");
-        manualReplayButton = new JButton("手动导入复盘参数");
+        startButton = new JButton("▶ 配置并启动仿真");
+        manualSimulationPresetButton = new JButton("从寻优范围选择参数");
         stopButton = new JButton("■ 停止仿真");
-        startButton.setEnabled(false);
-        startButton.setToolTipText("请先导入一份复盘参数");
-        manualReplayButton.setEnabled(false);
-        manualReplayButton.setToolTipText("请先完成一次寻优");
+        startButton.setEnabled(true);
+        startButton.setToolTipText("直接配置参数并启动仿真");
+        manualSimulationPresetButton.setEnabled(false);
+        manualSimulationPresetButton.setToolTipText("请先完成一次寻优");
         stopButton.setEnabled(false);
 
-        panel.add(manualReplayButton);
+        panel.add(manualSimulationPresetButton);
         panel.add(startButton);
         panel.add(stopButton);
 
@@ -260,19 +260,10 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         phaseLabel.setForeground(ColorTheme.TEXT_SECONDARY);
         panel.add(phaseLabel);
 
-        manualReplayButton.addActionListener(e -> openManualReplayImportDialog());
+        manualSimulationPresetButton.addActionListener(e -> openManualSimulationPresetDialog());
 
         startButton.addActionListener(e -> {
-            if (replayPresetConfig == null || !replayPresetConfig.lockedFromOptimization) {
-                JOptionPane.showMessageDialog(frame,
-                        "请先从寻优结果导入一个候选方案，或点击“手动导入复盘参数”。",
-                        "复盘参数未锁定",
-                        JOptionPane.INFORMATION_MESSAGE);
-                startButton.setEnabled(false);
-                return;
-            }
-
-            SimulationConfigDialog configDialog = new SimulationConfigDialog(frame, replayPresetConfig);
+            SimulationConfigDialog configDialog = new SimulationConfigDialog(frame, simulationPresetConfig);
             configDialog.setVisible(true);
 
             if (!configDialog.isConfirmed()) {
@@ -280,7 +271,7 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
             }
 
             SimulationConfigDTO dto = configDialog.getConfigData();
-            replayPresetConfig = dto;
+            simulationPresetConfig = dto.lockedFromOptimization ? dto : null;
 
             try {
                 // [原有的前端自身配置可能还需要保留]
@@ -390,7 +381,7 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
                         stopButton.setEnabled(true);
                     } catch (Exception ex) {
                         appendLog(">>> [错误] 启动失败：" + ex.getMessage());
-                        startButton.setEnabled(replayPresetConfig != null && replayPresetConfig.lockedFromOptimization);
+                        startButton.setEnabled(true);
                         stopButton.setEnabled(false);
                         ex.printStackTrace();
                     }
@@ -420,7 +411,7 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
                 appendLog(">>> [系统] 收到停止指令，正在关闭引擎...");
             }
 
-            startButton.setEnabled(replayPresetConfig != null && replayPresetConfig.lockedFromOptimization);
+            startButton.setEnabled(true);
             stopButton.setEnabled(false);
             phaseLabel.setText(" ");
             phaseLabel.setForeground(ColorTheme.TEXT_SECONDARY);
@@ -429,7 +420,7 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         return panel;
     }
 
-    private static void openManualReplayImportDialog() {
+    private static void openManualSimulationPresetDialog() {
         if (latestOptimizationContext == null) {
             JOptionPane.showMessageDialog(frame,
                     "请先在寻优模式中完成一次寻优，系统需要使用该次寻优的窗口和桌子范围。",
@@ -455,7 +446,7 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         int result = JOptionPane.showConfirmDialog(
                 frame,
                 form,
-                "手动导入复盘参数",
+                "从寻优范围选择仿真参数",
                 JOptionPane.OK_CANCEL_OPTION,
                 JOptionPane.PLAIN_MESSAGE
         );
@@ -466,13 +457,13 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         try {
             int windowCount = Integer.parseInt(windowField.getText().trim());
             int tableCount = Integer.parseInt(tableField.getText().trim());
-            validateManualReplayRange(windowCount, tableCount, latestOptimizationContext);
+            validateManualSimulationRange(windowCount, tableCount, latestOptimizationContext);
 
             SimRunResult selected = latestOptimizationContext.copyBasic();
             selected.windowCount = windowCount;
             selected.tableCount = tableCount;
             if (selected.baseRandomSeed != 0L && selected.repeatTimes > 0) {
-                selected.randomSeed = deriveReplaySeed(selected.baseRandomSeed, windowCount, tableCount, selected.repeatTimes);
+                selected.randomSeed = deriveSimulationSeed(selected.baseRandomSeed, windowCount, tableCount, selected.repeatTimes);
             }
             applyOptimizationPreset(selected);
         } catch (NumberFormatException ex) {
@@ -482,7 +473,7 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         }
     }
 
-    private static void validateManualReplayRange(int windowCount, int tableCount, SimRunResult context) {
+    private static void validateManualSimulationRange(int windowCount, int tableCount, SimRunResult context) {
         if (windowCount < context.minWindowCount || windowCount > context.maxWindowCount) {
             throw new IllegalArgumentException("窗口数必须在寻优范围 "
                     + context.minWindowCount + " 到 " + context.maxWindowCount + " 之间。");
@@ -493,7 +484,7 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         }
     }
 
-    private static long deriveReplaySeed(long baseSeed, int windowCount, int tableCount, int repeatIndex) {
+    private static long deriveSimulationSeed(long baseSeed, int windowCount, int tableCount, int repeatIndex) {
         long seed = baseSeed;
         seed ^= 0x9E3779B97F4A7C15L + windowCount * 1000003L;
         seed ^= Long.rotateLeft(tableCount * 10007L, 21);
@@ -684,7 +675,7 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
     @Override
     public void onSimulationFinished() {
         SwingUtilities.invokeLater(() -> {
-            startButton.setEnabled(replayPresetConfig != null && replayPresetConfig.lockedFromOptimization);
+            startButton.setEnabled(true);
             stopButton.setEnabled(false);
             phaseLabel.setText(" ● 仿真结束");
             phaseLabel.setForeground(ColorTheme.TEXT_SECONDARY);

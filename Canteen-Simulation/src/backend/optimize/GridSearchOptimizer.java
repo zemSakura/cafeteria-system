@@ -30,8 +30,10 @@ public class GridSearchOptimizer {
         long totalStart = System.currentTimeMillis();
         int step = 0;
 
+        // 核心：纯粹的双重 for 循环全量遍历，不加任何早停逻辑，保证拿到全局最优和完整热力图
         for (int w = optimizeConfig.minWindowCount; w <= optimizeConfig.maxWindowCount; w++) {
             for (int t = optimizeConfig.minTableCount; t <= optimizeConfig.maxTableCount; t++) {
+
                 if (isCancelled(cancellationChecker)) {
                     optimizeResult.totalRuntimeMs = System.currentTimeMillis() - totalStart;
                     optimizeResult.buildTopK(optimizeConfig.topK);
@@ -46,10 +48,12 @@ public class GridSearchOptimizer {
                     return optimizeResult;
                 }
 
+                // 调用我们重构后的、绝对不会指数爆炸的 LossEvaluator
                 double loss = lossEvaluator.evaluate(avgResult, lossConfig);
                 avgResult.loss = loss;
                 avgResult.step = step;
 
+                // 记录全局最优解
                 if (loss < optimizeResult.bestLoss) {
                     optimizeResult.bestLoss = loss;
                     optimizeResult.bestResult = avgResult.copyBasic();
@@ -57,6 +61,8 @@ public class GridSearchOptimizer {
 
                 avgResult.currentBestLoss = optimizeResult.bestLoss;
                 optimizeResult.allResults.add(avgResult);
+
+                // 将数据吐给前端更新 UI
                 if (progressListener != null) {
                     progressListener.onStepFinished(step, optimizeResult.totalCandidateCount, avgResult, optimizeResult);
                 }
@@ -70,6 +76,7 @@ public class GridSearchOptimizer {
         optimizeResult.totalRuntimeMs = System.currentTimeMillis() - totalStart;
         optimizeResult.buildTopK(optimizeConfig.topK);
 
+        // 寻优结束后，用最佳参数跑一次回放，供前端大屏完美复盘
         if (optimizeConfig.runReplayAfterOptimization && optimizeResult.bestResult != null) {
             optimizeResult.replayResult = runReplay(optimizeResult.bestResult, optimizeConfig);
         }
@@ -134,8 +141,6 @@ public class GridSearchOptimizer {
                         + " | 桌子=" + r.tableCount
                         + " | 等待=" + String.format("%.2f", r.avgWaitTimeMinutes) + "分钟"
                         + " | 最大排队=" + r.maxQueueLength
-                        + " | 座位利用率=" + String.format("%.2f", r.seatUtilization)
-                        + " | 放弃率=" + String.format("%.2f", r.abandonRate)
                         + " | 损失值=" + String.format("%.4f", r.loss)
                         + " | 当前最佳=" + String.format("%.4f", r.currentBestLoss)
         );
