@@ -3,53 +3,30 @@ package backend.optimize;
 public class LossEvaluator {
     public double evaluate(SimRunResult r, LossConfig c) {
         c.validate();
-        double rawCost = r.windowCount * c.windowCost + r.tableCount * c.tableCost;
-        double costNorm = rawCost / c.maxAcceptCost;
-        double waitNorm = r.avgWaitTimeMinutes / c.maxAcceptWaitMinutes;
-        double queueNorm = r.maxQueueLength / c.maxAcceptQueueLength;
-        double abandonNorm = r.abandonRate / c.maxAcceptAbandonRate;
-        double utilNorm = Math.abs(r.seatUtilization - c.targetSeatUtilization) / c.targetSeatUtilization;
 
-        double experienceLoss = c.waitWeight * waitNorm
-                + c.queueWeight * queueNorm
-                + c.abandonWeight * abandonNorm
-                + c.utilizationWeight * utilNorm;
+        // 1. 纯线性硬件成本：每加一个窗口/桌子，稳步增加固定代价
+        double resourceCost = (r.windowCount * c.windowCost) + (r.tableCount * c.tableCost);
 
-        double loss = c.costWeight * costNorm
-                + c.experienceWeight * experienceLoss
-                + calculateHardConstraintPenalty(r, c);
-
-        if (r.finishRate < c.minAcceptFinishRate) {
-            loss += c.lowFinishRatePenalty * (c.minAcceptFinishRate - r.finishRate);
+        // 2. 等待超时二次惩罚
+        double waitPenalty = 0.0;
+        if (r.avgWaitTimeMinutes > c.hardWaitThresholdMinutes) {
+            double excessWait = r.avgWaitTimeMinutes - c.hardWaitThresholdMinutes;
+            waitPenalty = c.waitPenaltyWeight * Math.pow(excessWait, 2);
         }
+
+        // 3. 放弃就餐二次惩罚
+        double abandonPenalty = 0.0;
+        if (r.abandonRate > c.hardAbandonRateThreshold) {
+            double excessAbandon = r.abandonRate - c.hardAbandonRateThreshold;
+            abandonPenalty = c.abandonPenaltyWeight * Math.pow(excessAbandon, 2);
+        }
+
+        // 4. 最终总损耗：平时只看成本，一旦越线，惩罚值会瞬间吞噬成本优势
+        double loss = resourceCost + waitPenalty + abandonPenalty;
+
         if (Double.isNaN(loss) || Double.isInfinite(loss)) {
             return Double.MAX_VALUE;
         }
         return loss;
-    }
-
-    private double calculateHardConstraintPenalty(SimRunResult r, LossConfig c) {
-        double penalty = 0.0;
-        penalty += c.waitExponentialPenaltyWeight * exponentialOverThreshold(
-                r.avgWaitTimeMinutes,
-                c.hardWaitThresholdMinutes,
-                c.waitPenaltyScaleMinutes,
-                c.maxExponentialPenaltyInput
-        );
-        penalty += c.queueExponentialPenaltyWeight * exponentialOverThreshold(
-                r.maxQueueLength,
-                c.hardQueueThresholdLength,
-                c.queuePenaltyScaleLength,
-                c.maxExponentialPenaltyInput
-        );
-        return penalty;
-    }
-
-    private double exponentialOverThreshold(double value, double threshold, double scale, double maxInput) {
-        if (value <= threshold) {
-            return 0.0;
-        }
-        double input = Math.min(maxInput, (value - threshold) / scale);
-        return Math.expm1(input);
     }
 }
