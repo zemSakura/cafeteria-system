@@ -17,6 +17,7 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
 
     private static JButton startButton;
     private static JButton manualSimulationPresetButton;
+    private static JButton clearPresetButton;
     private static JButton stopButton;
     private static JLabel phaseLabel;
     private static final String VIEW_OPTIMIZATION = "optimization";
@@ -47,6 +48,22 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         SwingUtilities.invokeLater(MainDashboard::createAndShowGUI);
     }
 
+    private static void styleSplitPane(JSplitPane splitPane) {
+        splitPane.setBorder(BorderFactory.createEmptyBorder());
+        splitPane.setBackground(ColorTheme.BG_MAIN);
+        splitPane.setOpaque(true);
+
+        if (splitPane.getUI() instanceof javax.swing.plaf.basic.BasicSplitPaneUI) {
+            javax.swing.plaf.basic.BasicSplitPaneUI ui =
+                    (javax.swing.plaf.basic.BasicSplitPaneUI) splitPane.getUI();
+
+            if (ui.getDivider() != null) {
+                ui.getDivider().setBackground(ColorTheme.BG_MAIN);
+                ui.getDivider().setBorder(BorderFactory.createEmptyBorder());
+            }
+        }
+    }
+
     private static void createAndShowGUI() {
         frame = new MainDashboard();
         frame.setTitle("北京交通大学就餐仿真系统 - 总控台大屏");
@@ -62,61 +79,12 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         // 【架构调整】：最外层包装盒 (不带滚动，负责左右分界)
         // =========================================
         JPanel topWrapper = new JPanel(new BorderLayout(10, 0));
-        topWrapper.setOpaque(false);
-
-        // =========================================
-        // 【解耦升级：仅针对“就餐区”的智能滑动包装盒】
-        // =========================================
-        // =========================================
-        // 【解耦升级：仅针对“就餐区”的智能滑动包装盒】
-        // =========================================
-        class DiningScrollWrapper extends JPanel implements javax.swing.Scrollable {
-            private final int MIN_HEIGHT = 450;
-
-            public DiningScrollWrapper() {
-                super(new BorderLayout());
-                setOpaque(false);
-            }
-
-            @Override
-            public Dimension getPreferredSize() {
-                Dimension d = super.getPreferredSize();
-                if (getParent() instanceof javax.swing.JViewport) {
-                    // 取 桌子真实总高度、保底高度、屏幕高度 的最大值
-                    d.height = Math.max(d.height, Math.max(MIN_HEIGHT, getParent().getHeight()));
-                }
-                return d;
-            }
-
-            @Override public Dimension getPreferredScrollableViewportSize() { return getPreferredSize(); }
-            @Override public int getScrollableUnitIncrement(Rectangle r, int o, int d) { return 40; } // 滚轮速度
-            @Override public int getScrollableBlockIncrement(Rectangle r, int o, int d) { return 100; }
-            @Override public boolean getScrollableTracksViewportWidth() { return true; }
-
-            @Override
-            public boolean getScrollableTracksViewportHeight() {
-                // 【致命 Bug 修复点】
-                // 只有当桌子的真实自然高度（super.getPreferredSize().height）小于视窗高度时，才去贴合屏幕压缩。
-                // 一旦桌子变多，真实高度超过了视窗，立刻返回 false，拒绝压缩，强行撑开滚动条！
-                if (getParent() instanceof javax.swing.JViewport) {
-                    return super.getPreferredSize().height <= getParent().getHeight();
-                }
-                return false;
-            }
-        }
+        topWrapper.setOpaque(true);
+        topWrapper.setBackground(ColorTheme.BG_MAIN);
 
         // 1. 组装就餐区及专属滑动窗口
-        DiningScrollWrapper diningWrapper = new DiningScrollWrapper();
         myDiningPanel = new DiningAreaPanel(30); // 你的30张桌子
         myDiningPanel.setBackground(ColorTheme.BG_CARD);
-        diningWrapper.add(myDiningPanel, BorderLayout.CENTER);
-
-        JScrollPane diningScroll = new JScrollPane(diningWrapper);
-        diningScroll.setBorder(null);
-        diningScroll.setOpaque(false);
-        diningScroll.getViewport().setOpaque(false);
-        diningScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        diningScroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
 
         // 2. 组装排队区 (独立在右侧，不受就餐区滚动影响)
         myQueuePanel = new QueueAreaPanel(5);
@@ -124,7 +92,7 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         myQueuePanel.setBackground(ColorTheme.BG_CARD);
 
         // 3. 终极合体：左边是可以自己滚动+缩放的就餐区，右边是雷打不动的排队区
-        topWrapper.add(diningScroll, BorderLayout.CENTER);
+        topWrapper.add(myDiningPanel, BorderLayout.CENTER);
         topWrapper.add(myQueuePanel, BorderLayout.EAST);
 
         // =========================================
@@ -134,8 +102,13 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         logPanel.setMinimumSize(new Dimension(0, 120)); // 日志区最少保留 120 像素
 
         JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
+        styleSplitPane(splitPane);
         splitPane.setContinuousLayout(true);
         splitPane.setDividerSize(6);
+        styleSplitPane(splitPane);
+        splitPane.setBorder(BorderFactory.createEmptyBorder());
+        splitPane.setBackground(ColorTheme.BG_MAIN);
+        splitPane.setOpaque(true);
 
         // 上面放包含一切的全局滑动视窗，下面放日志
         splitPane.setTopComponent(topWrapper);
@@ -145,8 +118,9 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         // 将初始分割线设为 0.75 的比例，避免硬编码像素导致在不同屏幕上被截断
         splitPane.setDividerLocation(0.75);
 
-        JPanel simulationPanel = new JPanel(new BorderLayout(10, 10));
+        JPanel simulationPanel = new JPanel(new BorderLayout(12, 12));
         simulationPanel.setBackground(ColorTheme.BG_MAIN);
+        simulationPanel.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
         simulationPanel.add(createConfigPanel(), BorderLayout.NORTH);
         simulationPanel.add(splitPane, BorderLayout.CENTER);
 
@@ -182,8 +156,14 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
 
     private static void styleNavButton(JButton button, Color accentColor) {
         button.setFocusPainted(false);
-        button.setForeground(ColorTheme.BG_CARD);
         button.setBackground(accentColor);
+        button.setForeground(ColorTheme.BG_CARD);
+        button.setBorderPainted(false);
+        button.setContentAreaFilled(true);
+        button.putClientProperty(
+                "FlatLaf.style",
+                "arc: 18; borderWidth: 0; focusWidth: 0; innerFocusWidth: 0; margin: 7,18,7,18"
+        );
     }
 
     private static void rememberOptimizationContext(SimRunResult result) {
@@ -200,12 +180,19 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         latestOptimizationContext = result.copyBasic();
         SimulationConfigDTO preset = buildLockedSimulationConfig(result);
         simulationPresetConfig = preset;
+
         if (startButton != null) {
             startButton.setEnabled(true);
             startButton.setToolTipText("使用已导入的最佳方案启动仿真");
         }
+
         if (manualSimulationPresetButton != null) {
             manualSimulationPresetButton.setEnabled(true);
+        }
+
+        if (clearPresetButton != null) {
+            clearPresetButton.setEnabled(true);
+            clearPresetButton.setToolTipText("清除当前导入的寻优方案，恢复自定义初始化");
         }
 
         dashboardCardLayout.show(dashboardCards, VIEW_SIMULATION);
@@ -237,27 +224,80 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         return preset;
     }
 
+    private static void styleActionButton(JButton button, Color bg, Color fg) {
+        button.setFocusPainted(false);
+        button.setBackground(bg);
+        button.setForeground(fg);
+        button.setBorderPainted(false);
+        button.setContentAreaFilled(true);
+        button.putClientProperty(
+                "FlatLaf.style",
+                "arc: 18; borderWidth: 0; focusWidth: 0; innerFocusWidth: 0; margin: 8,18,8,18"
+        );
+    }
+
+    private static void clearOptimizationPreset() {
+        simulationPresetConfig = null;
+
+        if (startButton != null) {
+            startButton.setEnabled(true);
+            startButton.setToolTipText("直接配置参数并启动仿真");
+        }
+
+        if (clearPresetButton != null) {
+            clearPresetButton.setEnabled(false);
+            clearPresetButton.setToolTipText("当前未导入寻优方案");
+        }
+
+        if (manualSimulationPresetButton != null) {
+            manualSimulationPresetButton.setEnabled(latestOptimizationContext != null);
+            manualSimulationPresetButton.setToolTipText(latestOptimizationContext == null
+                    ? "请先完成一次寻优"
+                    : "在最近一次寻优范围内手动选择仿真参数");
+        }
+
+        phaseLabel.setText(" ");
+        phaseLabel.setForeground(ColorTheme.TEXT_SECONDARY);
+
+        appendLog(">>> [系统] 已恢复自定义初始化模式。");
+    }
+
     private static JPanel createConfigPanel() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 15, 10));
         panel.setBackground(ColorTheme.BG_CARD);
-        panel.setBorder(BorderFactory.createEmptyBorder(10, 12, 10, 12));
+        panel.setBorder(BorderFactory.createEmptyBorder(14, 18, 14, 18));
 
         startButton = new JButton("▶ 配置并启动仿真");
         manualSimulationPresetButton = new JButton("从寻优范围选择参数");
+        clearPresetButton = new JButton("恢复自定义初始化");
         stopButton = new JButton("■ 停止仿真");
         startButton.setEnabled(true);
         startButton.setToolTipText("直接配置参数并启动仿真");
+
         manualSimulationPresetButton.setEnabled(false);
         manualSimulationPresetButton.setToolTipText("请先完成一次寻优");
+
+        clearPresetButton.setEnabled(false);
+        clearPresetButton.setToolTipText("当前未导入寻优方案");
+
         stopButton.setEnabled(false);
 
         panel.add(manualSimulationPresetButton);
         panel.add(startButton);
+        panel.add(clearPresetButton);
         panel.add(stopButton);
 
+        styleActionButton(manualSimulationPresetButton, ColorTheme.BG_CONTROL, ColorTheme.TEXT_PRIMARY);
+        styleActionButton(startButton, ColorTheme.ACCENT_CYAN, ColorTheme.BG_CARD);
+        styleActionButton(clearPresetButton, ColorTheme.BG_CONTROL, ColorTheme.TEXT_PRIMARY);
+        styleActionButton(stopButton, ColorTheme.BG_CONTROL, ColorTheme.TEXT_PRIMARY);
+
         phaseLabel = new JLabel(" ");
-        phaseLabel.setFont(new java.awt.Font("SansSerif", java.awt.Font.BOLD, 14));
-        phaseLabel.setForeground(ColorTheme.TEXT_SECONDARY);
+        phaseLabel.setFont(new java.awt.Font("SansSerif", java.awt.Font.BOLD, 15));
+        phaseLabel.setForeground(ColorTheme.ACCENT_YELLOW);
+        phaseLabel.setOpaque(true);
+        phaseLabel.setBackground(ColorTheme.BG_PANEL);
+        phaseLabel.setBorder(BorderFactory.createEmptyBorder(6, 14, 6, 14));
         panel.add(phaseLabel);
 
         manualSimulationPresetButton.addActionListener(e -> openManualSimulationPresetDialog());
@@ -272,6 +312,13 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
 
             SimulationConfigDTO dto = configDialog.getConfigData();
             simulationPresetConfig = dto.lockedFromOptimization ? dto : null;
+
+            if (clearPresetButton != null) {
+                clearPresetButton.setEnabled(simulationPresetConfig != null);
+                clearPresetButton.setToolTipText(simulationPresetConfig == null
+                        ? "当前未导入寻优方案"
+                        : "清除当前导入的寻优方案，恢复自定义初始化");
+            }
 
             try {
                 // [原有的前端自身配置可能还需要保留]
@@ -395,6 +442,8 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
                 JOptionPane.showMessageDialog(frame, ex.getMessage(), "配置错误", JOptionPane.ERROR_MESSAGE);
             }
         });
+
+        clearPresetButton.addActionListener(e -> clearOptimizationPreset());
 
         stopButton.addActionListener(e -> {
             if (delayTimer != null && delayTimer.isRunning()) {
@@ -555,20 +604,36 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
     }
 
     private static JPanel createLogAreaPanel() {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setBorder(BorderFactory.createTitledBorder("实时日志"));
+        JPanel panel = new JPanel(new BorderLayout(0, 6));
+        panel.setBackground(ColorTheme.BG_CARD);
+        panel.setBorder(BorderFactory.createEmptyBorder(8, 10, 8, 10));
 
+        JLabel titleLabel = new JLabel("实时日志");
+        titleLabel.setForeground(ColorTheme.TEXT_PRIMARY);
+        titleLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 14));
+        titleLabel.setBorder(BorderFactory.createEmptyBorder(0, 2, 2, 0));
+        panel.add(titleLabel, BorderLayout.NORTH);
 
-        logTextArea = new JTextArea(8, 20);
+        logTextArea = new JTextArea();
         logTextArea.setEditable(false);
-        // 确保日志文本域的底色和文字颜色也使用调色盘
-        logTextArea.setBackground(frontend.ColorTheme.BG_CARD); // 设置为极暗黑
-        logTextArea.setForeground(frontend.ColorTheme.TEXT_PRIMARY); // 字体设为亮灰白
+        logTextArea.setLineWrap(false);
+        logTextArea.setBackground(ColorTheme.LOG_BG);
+        logTextArea.setForeground(ColorTheme.TEXT_SECONDARY);
+        logTextArea.setCaretColor(ColorTheme.ACCENT_CYAN);
+        logTextArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 13));
+        logTextArea.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
+        logTextArea.putClientProperty("JComponent.focusWidth", 0);
 
         JScrollPane scrollPane = new JScrollPane(logTextArea);
-        // 【新增】：剥夺滚动条的默认线框
         scrollPane.setBorder(BorderFactory.createEmptyBorder());
-        logTextArea.putClientProperty("JComponent.focusWidth", 0);
+        scrollPane.setBackground(ColorTheme.BG_CARD);
+        scrollPane.getViewport().setBackground(ColorTheme.LOG_BG);
+        scrollPane.getViewport().setOpaque(true);
+
+        scrollPane.getVerticalScrollBar().putClientProperty("ScrollBar.showButtons", false);
+        scrollPane.getVerticalScrollBar().putClientProperty("ScrollBar.thumbArc", 999);
+        scrollPane.getVerticalScrollBar().putClientProperty("ScrollBar.thumbInsets", new Insets(2, 4, 2, 4));
+
         panel.add(scrollPane, BorderLayout.CENTER);
 
         return panel;
