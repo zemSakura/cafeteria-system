@@ -6,20 +6,17 @@ import java.awt.*;
 public class QueueAreaPanel extends JPanel {
 
     private JProgressBar[] queueBars;
+    private final JLabel titleLabel = new JLabel("排队区");
 
     public QueueAreaPanel(int initialWindowCount) {
-        this.setLayout(new BorderLayout());
-
-        // 【视觉优化 1：设置整体背景色为悬浮卡片色】
+        this.setLayout(new BorderLayout(0, 8));
         this.setBackground(frontend.ColorTheme.BG_CARD);
 
-        // 【视觉优化 2：用留白代替死板的线框，文字换成高级灰】
-        javax.swing.border.TitledBorder titledBorder = BorderFactory.createTitledBorder(
-                BorderFactory.createEmptyBorder(20, 20, 20, 20),
-                "窗口排队监控"
-        );
-        titledBorder.setTitleColor(frontend.ColorTheme.TEXT_SECONDARY);
-        this.setBorder(titledBorder);
+        this.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
+
+        titleLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 15));
+        titleLabel.setForeground(frontend.ColorTheme.TEXT_PRIMARY);
+        titleLabel.setBorder(BorderFactory.createEmptyBorder(0, 2, 4, 0));
 
         updateWindowCount(initialWindowCount);
     }
@@ -27,21 +24,22 @@ public class QueueAreaPanel extends JPanel {
     public void updateWindowCount(int windowCount) {
         this.removeAll();
 
+        this.add(titleLabel, BorderLayout.NORTH);
+
         queueBars = new JProgressBar[windowCount];
 
-        JPanel listPanel = new JPanel(new GridLayout(windowCount, 1, 0, 15));
-        listPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        // 极其重要：让里面的面板透明，露出底下的高级暗色
+        JPanel listPanel = new JPanel(new GridLayout(windowCount, 1, 0, 14));
+        listPanel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
         listPanel.setOpaque(false);
 
         for (int i = 0; i < windowCount; i++) {
             JPanel singleWindowPanel = new JPanel(new BorderLayout(10, 0));
-            singleWindowPanel.setPreferredSize(new Dimension(0, 35));
-            singleWindowPanel.setOpaque(false); // 背景透明
+            singleWindowPanel.setPreferredSize(new Dimension(0, 42));
+            singleWindowPanel.setOpaque(false);
 
             JLabel nameLabel = new JLabel("窗口 " + (i + 1));
-            nameLabel.setPreferredSize(new Dimension(60, 30));
-            // 文字变成主标题亮色
+            nameLabel.setPreferredSize(new Dimension(64, 30));
+            nameLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 13));
             nameLabel.setForeground(frontend.ColorTheme.TEXT_PRIMARY);
             singleWindowPanel.add(nameLabel, BorderLayout.WEST);
 
@@ -49,12 +47,14 @@ public class QueueAreaPanel extends JPanel {
             progressBar.setValue(0);
             progressBar.setStringPainted(true);
             progressBar.setString("排队中: 0 人");
-
-            // 【视觉优化 3：初始颜色换成深邃调色盘的霓虹青色】
             progressBar.setForeground(frontend.ColorTheme.ACCENT_CYAN);
-
-            // 给进度条也加上圆角魔法 (结合 FlatLaf 引擎食用极佳)
-            progressBar.putClientProperty("FlatLaf.style", "arc: 15");
+            progressBar.setBackground(frontend.ColorTheme.QUEUE_TRACK);
+            progressBar.setBorderPainted(false);
+            progressBar.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
+            progressBar.putClientProperty(
+                    "FlatLaf.style",
+                    "arc: 18; borderWidth: 0; focusWidth: 0; innerFocusWidth: 0"
+            );
 
             queueBars[i] = progressBar;
             singleWindowPanel.add(progressBar, BorderLayout.CENTER);
@@ -63,16 +63,19 @@ public class QueueAreaPanel extends JPanel {
         }
 
         JPanel wrapperPanel = new JPanel(new BorderLayout());
-        wrapperPanel.setOpaque(false); // 包装器透明
+        wrapperPanel.setOpaque(false);
         wrapperPanel.add(listPanel, BorderLayout.NORTH);
 
         JScrollPane scrollPane = new JScrollPane(wrapperPanel);
         scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
         scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        scrollPane.setBorder(null); // 去掉滚动条的边框
+        scrollPane.setBorder(null);
         scrollPane.setOpaque(false);
-        // 【视觉优化 4 (驱逐白色刺客)：视口也必须设置透明！】
         scrollPane.getViewport().setOpaque(false);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(20);
+        scrollPane.getVerticalScrollBar().putClientProperty("ScrollBar.showButtons", false);
+        scrollPane.getVerticalScrollBar().putClientProperty("ScrollBar.thumbArc", 999);
+        scrollPane.getVerticalScrollBar().putClientProperty("ScrollBar.thumbInsets", new Insets(2, 4, 2, 4));
 
         this.add(scrollPane, BorderLayout.CENTER);
 
@@ -110,11 +113,22 @@ public class QueueAreaPanel extends JPanel {
             // 只要达到 30% 就开始黄牌警告，超过 60% 直接红牌！
             if (ratio < 0.3) {
                 bar.setForeground(frontend.ColorTheme.ACCENT_CYAN);   // <30% 畅通
-            } else if (ratio < 0.6) {
-                bar.setForeground(frontend.ColorTheme.ACCENT_YELLOW); // 30%~60% 警告
+            } else if (ratio < 0.7) {
+                bar.setForeground(frontend.ColorTheme.ACCENT_YELLOW); // 30%~70% 警告
             } else {
-                bar.setForeground(frontend.ColorTheme.ACCENT_RED);    // >60% 极度拥挤
+                bar.setForeground(frontend.ColorTheme.ACCENT_RED);    // >70% 极度拥挤
             }
+        }
+    }
+
+    public void clearQueues() {
+        if (queueBars == null) {
+            return;
+        }
+        for (JProgressBar bar : queueBars) {
+            bar.setValue(0);
+            bar.setString("排队中: 0 人");
+            bar.setForeground(frontend.ColorTheme.ACCENT_CYAN);
         }
     }
 }
