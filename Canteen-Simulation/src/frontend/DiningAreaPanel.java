@@ -1,5 +1,8 @@
 package frontend;
 
+import backend.dto.TableStat;
+import backend.dto.TableStatus;
+
 import javax.swing.*;
 import java.awt.*;
 import java.util.ArrayList;
@@ -18,7 +21,7 @@ public class DiningAreaPanel extends JPanel {
         this.setBorder(BorderFactory.createEmptyBorder(10, 12, 10, 12));
 
         JLabel titleLabel = new JLabel("就餐区");
-        titleLabel.setFont(new Font("SansSerif", Font.BOLD, 15));
+        titleLabel.setFont(ColorTheme.font(Font.BOLD, 15));
         titleLabel.setForeground(frontend.ColorTheme.TEXT_PRIMARY);
         titleLabel.setBorder(BorderFactory.createEmptyBorder(2, 5, 2, 0));
         this.add(titleLabel, BorderLayout.NORTH);
@@ -124,7 +127,7 @@ public class DiningAreaPanel extends JPanel {
         tableContainer.setOpaque(false);
 
         JLabel tableLabel = new JLabel("桌 " + String.format("%02d", tableId));
-        tableLabel.setFont(new Font("SansSerif", Font.BOLD, 10));
+        tableLabel.setFont(ColorTheme.font(Font.BOLD, 10));
         tableLabel.setForeground(frontend.ColorTheme.TEXT_SECONDARY);
         tableLabel.setHorizontalAlignment(SwingConstants.CENTER);
         tableContainer.add(tableLabel, BorderLayout.NORTH);
@@ -192,6 +195,63 @@ public class DiningAreaPanel extends JPanel {
         }
         tableSeatStates.put(tableIndex, states);
         applySeatStatesToUI(tableIndex, states);
+    }
+
+    public void updateTableStats(List<TableStat> stats) {
+        if (stats == null) {
+            return;
+        }
+        for (TableStat stat : stats) {
+            applyTableStatToUI(stat);
+        }
+    }
+
+    private void applyTableStatToUI(TableStat stat) {
+        if (stat.tableId < 0 || stat.tableId >= tablesGridPanel.getComponentCount()) {
+            return;
+        }
+        Component comp = tablesGridPanel.getComponent(stat.tableId);
+        if (!(comp instanceof JPanel)) {
+            return;
+        }
+        JPanel wrapper = (JPanel) comp;
+        List<JPanel> seatPanels = new ArrayList<>();
+        collectSeatPanels(wrapper, seatPanels);
+
+        Color fill = colorFor(stat.status);
+        for (int i = 0; i < seatPanels.size(); i++) {
+            JPanel seat = seatPanels.get(i);
+            boolean occupied = i < stat.occupiedSeats;
+            seat.setBackground(occupied ? fill : ColorTheme.BG_EMPTY_SEAT);
+            Color border = stat.status == TableStatus.RELEASING_SOON
+                    ? ColorTheme.ACCENT_BLUE
+                    : ColorTheme.BORDER_SOFT;
+            seat.setBorder(BorderFactory.createLineBorder(border, stat.status == TableStatus.RELEASING_SOON ? 2 : 1));
+        }
+        String release = stat.expectedReleaseTime < 0
+                ? "-"
+                : String.format("%d:%02d", stat.expectedReleaseTime / 60, stat.expectedReleaseTime % 60);
+        wrapper.setToolTipText("桌 " + (stat.tableId + 1)
+                + " | 容量 " + stat.capacity
+                + " | 占用 " + stat.occupiedSeats
+                + " | 预计释放 " + release);
+        wrapper.repaint();
+    }
+
+    private Color colorFor(TableStatus status) {
+        if (status == TableStatus.PARTIAL) {
+            return ColorTheme.ACCENT_YELLOW;
+        }
+        if (status == TableStatus.NEAR_FULL) {
+            return new Color(255, 145, 48);
+        }
+        if (status == TableStatus.FULL) {
+            return ColorTheme.ACCENT_RED;
+        }
+        if (status == TableStatus.RELEASING_SOON) {
+            return ColorTheme.ACCENT_BLUE;
+        }
+        return ColorTheme.ACCENT_GREEN;
     }
 
     private void applySeatStatesToUI(int tableIndex, int[] states) {

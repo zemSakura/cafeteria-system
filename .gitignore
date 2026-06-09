@@ -35,3 +35,11 @@ bin/
 
 # Generated simulation reports
 simulation-output/
+
+# Codex config
+.codex/
+
+# Temporary docs and images
+codex_*.txt
+*.png
+*.jpg

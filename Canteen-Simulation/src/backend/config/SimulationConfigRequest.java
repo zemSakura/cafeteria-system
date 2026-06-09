@@ -31,6 +31,13 @@ public class SimulationConfigRequest {
     private int totalPopulation;
     private String simulationMode;
     private String mealPeriod;
+    private double breakfastPopulationRatio;
+    private double lunchPopulationRatio;
+    private double dinnerPopulationRatio;
+    private double avgMealPrice;
+    private double windowCostPerHour;
+    private double tableCost;
+    private double lostStudentPenalty;
 
     private int[] windowDistances;
     private int[] windowAvgServeTime;
@@ -58,6 +65,13 @@ public class SimulationConfigRequest {
         this.totalPopulation = CanteenConfig.DEFAULT_TOTAL_POPULATION;
         this.simulationMode = CanteenConfig.DEFAULT_SIMULATION_MODE.getCode();
         this.mealPeriod = CanteenConfig.DEFAULT_MEAL_PERIOD.getCode();
+        this.breakfastPopulationRatio = CanteenConfig.DEFAULT_BREAKFAST_POPULATION_RATIO;
+        this.lunchPopulationRatio = CanteenConfig.DEFAULT_LUNCH_POPULATION_RATIO;
+        this.dinnerPopulationRatio = CanteenConfig.DEFAULT_DINNER_POPULATION_RATIO;
+        this.avgMealPrice = CanteenConfig.DEFAULT_AVG_MEAL_PRICE;
+        this.windowCostPerHour = CanteenConfig.DEFAULT_WINDOW_COST_PER_HOUR;
+        this.tableCost = CanteenConfig.DEFAULT_TABLE_COST;
+        this.lostStudentPenalty = CanteenConfig.DEFAULT_LOST_STUDENT_PENALTY;
     }
 
     public int getTableCount() {
@@ -203,6 +217,62 @@ public class SimulationConfigRequest {
 
     public void setMealPeriod(String mealPeriod) {
         this.mealPeriod = mealPeriod;
+    }
+
+    public double getBreakfastPopulationRatio() {
+        return breakfastPopulationRatio;
+    }
+
+    public void setBreakfastPopulationRatio(double breakfastPopulationRatio) {
+        this.breakfastPopulationRatio = breakfastPopulationRatio;
+    }
+
+    public double getLunchPopulationRatio() {
+        return lunchPopulationRatio;
+    }
+
+    public void setLunchPopulationRatio(double lunchPopulationRatio) {
+        this.lunchPopulationRatio = lunchPopulationRatio;
+    }
+
+    public double getDinnerPopulationRatio() {
+        return dinnerPopulationRatio;
+    }
+
+    public void setDinnerPopulationRatio(double dinnerPopulationRatio) {
+        this.dinnerPopulationRatio = dinnerPopulationRatio;
+    }
+
+    public double getAvgMealPrice() {
+        return avgMealPrice;
+    }
+
+    public void setAvgMealPrice(double avgMealPrice) {
+        this.avgMealPrice = avgMealPrice;
+    }
+
+    public double getWindowCostPerHour() {
+        return windowCostPerHour;
+    }
+
+    public void setWindowCostPerHour(double windowCostPerHour) {
+        this.windowCostPerHour = windowCostPerHour;
+    }
+
+    public double getTableCost() {
+        return tableCost;
+    }
+
+    public void setTableCost(double tableCost) {
+        this.tableCost = tableCost;
+    }
+
+    public double getLostStudentPenalty() {
+        return lostStudentPenalty;
+    }
+
+    public void setLostStudentPenalty(double lostStudentPenalty) {
+        this.lostStudentPenalty = lostStudentPenalty;
     }
 
     public int[] getWindowDistances() {

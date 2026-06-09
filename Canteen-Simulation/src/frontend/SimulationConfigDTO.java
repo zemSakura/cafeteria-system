@@ -11,6 +11,13 @@ public class SimulationConfigDTO {
     public int windowCount = 5;        // 默认 5 个窗口
     public double probSolo = 0.7;      // 默认单人概率 0.7
     public long randomSeed = 20260407L; // 默认随机种子
+    public double avgMealPrice = 15.0;
+    public double windowCostPerHour = 35.0;
+    public double tableCost = 0.5;
+    public double lostStudentPenalty = 12.0;
+    public double breakfastPopulationRatio = 0.25;
+    public double lunchPopulationRatio = 0.45;
+    public double dinnerPopulationRatio = 0.30;
 
     // 【新增】：对接后端的新维度
     public String simulationMode; // "singlePeriod" 或 "fullDay"

@@ -1,6 +1,13 @@
 package backend.engine;
 
 import backend.config.CanteenConfig;
+import backend.dto.PressureLevel;
+import backend.dto.RenderMode;
+import backend.dto.SimulationSnapshot;
+import backend.dto.TableStat;
+import backend.dto.TableStatus;
+import backend.dto.TrendPoint;
+import backend.dto.WindowStat;
 import backend.model.ArrivalGenerationResult;
 import backend.model.StatisticsResult;
 import backend.model.Student;
@@ -29,11 +36,11 @@ import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.PriorityQueue;
 import java.util.Random;
 import java.util.Set;
 
@@ -50,7 +57,7 @@ import java.util.Set;
  * 核心规则：
  * - 后端仿真时间单位为秒。
  * - 学生按到达时间进入系统，同组学生统一判断是否放弃排队。
- * - 同组成员到达后，每个学生独立选择窗口排队。
+ * - 同组成员到达后，多数情况下同组选择同一窗口，少数情况下成员分散排队。
  * - 学生完成服务后进入等座区；同组中先打完饭的人可以先占座。
  * - 一旦找到桌子，后端会为整组锁定座位容量，防止后续同组成员没有座位。
  * - 前端只显示 Table 中真实已经入座的 seatGroupIds，锁定但未入座的位置不会提前标红。
@@ -59,6 +66,9 @@ import java.util.Set;
 public class SimulationEngine implements Runnable {
 
     private static final DateTimeFormatter REPORT_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
+    private static final double WALKING_SECONDS_PER_METER = 0.8;
+    private static final double NON_PREFERRED_WINDOW_PENALTY_SECONDS = 8.0;
+    private static final double GROUP_SHARED_WINDOW_PROBABILITY = 0.70;
     private static final SimulationEventListener NO_OP_LISTENER = new SimulationEventListener() {
         @Override
         public void onStudentArrived(int studentId, int groupId, long time) {
@@ -99,13 +109,16 @@ public class SimulationEngine implements Runnable {
     private final List<WindowState> windowStates;
     private final List<Deque<Student>> windowQueues;
     private final List<Table> tables;
-    private final List<Student> diningStudents;
+    private final Set<Student> diningStudents;
+    private final PriorityQueue<DiningGroupCompletion> diningCompletionHeap;
+    private final PriorityQueue<SeatWaitExpiration> seatWaitExpirationHeap;
 
     private final Student[] servingStudents;
     private final long[] serviceEndTimes;
 
     private final long timeScaleMillis;
     private final Random random;
+    private final long hardStopTime;
 
     /** groupId -> 整组成员。 */
     private final Map<Integer, List<Student>> groupMembers;
@@ -125,6 +138,9 @@ public class SimulationEngine implements Runnable {
     /** groupId -> 已经实际入座的成员。 */
     private final Map<Integer, List<Student>> seatedMembersByGroup;
 
+    /** 新增等座成员后，需要尝试安排座位的小组。 */
+    private final Set<Integer> seatGroupsToProcess;
+
     /**
      * tableId -> 当前桌子被占用/锁定的座位数。
      *
@@ -132,6 +148,9 @@ public class SimulationEngine implements Runnable {
      * 前端显示不使用该值，而是使用 Table.getSeatGroupIds()，因此锁定但未入座的位置不会标红。
      */
     private final Map<Integer, Integer> tableReservedOrOccupiedSeats;
+
+    /** 已锁定或占用座位数 -> 对应桌号，用于快速查找可用桌位。 */
+    private final List<RandomAccessIntSet> tableIdsByReservedSeatCount;
 
     private final List<ArrivalGenerationResult.PhaseBoundary> phaseBoundaries;
     private int currentPhaseIndex = -1;
@@ -166,6 +185,7 @@ public class SimulationEngine implements Runnable {
     private int sharedTableSeatCount = 0;
     private int seatReservationCount = 0;
     private int groupLeaveCount = 0;
+    private boolean retryAllWaitingSeatGroups = false;
 
     private final StatisticsResult statisticsResult = new StatisticsResult();
 
@@ -174,10 +194,16 @@ public class SimulationEngine implements Runnable {
     private long queueSampleCount = 0L;
     private long occupiedSeatsSum = 0L;
     private long seatSampleCount = 0L;
+    private long occupiedTableSum = 0L;
+    private long tableSampleCount = 0L;
     private long busyWindowSum = 0L;
     private long windowSampleCount = 0L;
     private int maxTotalQueueLength = 0;
+    private int maxWaitingSeatCount = 0;
     private long runStartWallMs = 0L;
+    private long lastSnapshotBroadcastTime = -1L;
+    private final List<TrendPoint> trendPoints = new ArrayList<>();
+    private static final int MAX_TREND_POINTS = 240;
 
     /** Added for backend auto-optimization replay data. */
     private ReplayRecorder replayRecorder;
@@ -213,6 +239,7 @@ public class SimulationEngine implements Runnable {
         // 现在后端 tick 是秒，因此压缩 sleep，避免 GUI 慢 60 倍。
         this.timeScaleMillis = Math.max(1L, Math.round(timeScaleMillis / 60.0));
         this.random = new Random(CanteenConfig.RANDOM_SEED);
+        this.hardStopTime = calculateHardStopTime();
 
         this.windowStates = initWindowStates();
         this.windowQueues = new ArrayList<>();
@@ -221,7 +248,11 @@ public class SimulationEngine implements Runnable {
         }
 
         this.tables = initTables();
-        this.diningStudents = new ArrayList<>();
+        this.diningStudents = new HashSet<>();
+        this.diningCompletionHeap = new PriorityQueue<>(
+                Comparator.comparingLong(completion -> completion.leaveTime));
+        this.seatWaitExpirationHeap = new PriorityQueue<>(
+                Comparator.comparingLong(expiration -> expiration.expirationTime));
 
         this.servingStudents = new Student[windowStates.size()];
         this.serviceEndTimes = new long[windowStates.size()];
@@ -233,7 +264,9 @@ public class SimulationEngine implements Runnable {
         this.groupAssignedTable = new HashMap<>();
         this.groupReservedSeats = new HashMap<>();
         this.seatedMembersByGroup = new HashMap<>();
+        this.seatGroupsToProcess = new LinkedHashSet<>();
         this.tableReservedOrOccupiedSeats = new HashMap<>();
+        this.tableIdsByReservedSeatCount = initTableReservationBuckets();
         this.phaseBoundaries = new ArrayList<>(phaseBoundaries == null ? Collections.emptyList() : phaseBoundaries);
 
         this.cumulativeQueueLengthByWindow = new long[windowStates.size()];
@@ -273,9 +306,16 @@ public class SimulationEngine implements Runnable {
             while (running) {
                 processDiningCompletions();
                 processServiceCompletions();
+                processSeatWaitAbandonments();
                 trySeatWaitingGroups();
                 processArrivals();
                 processServiceStarts();
+
+                if (currentTime >= hardStopTime) {
+                    closeUnfinishedAtHardStop();
+                    sampleCurrentState();
+                    break;
+                }
 
                 if (isFastForwardMode()) {
                     if (isSimulationFinished()) {
@@ -310,6 +350,7 @@ public class SimulationEngine implements Runnable {
             Thread.currentThread().interrupt();
         } finally {
             finalizeStatistics();
+            broadcastSnapshot(true);
             closeReportWriters();
             if (CanteenConfig.CSV_ENABLED) {
                 generateFinalReports();
@@ -326,7 +367,7 @@ public class SimulationEngine implements Runnable {
     }
 
     private long findNextEventTimeAfterCurrent() {
-        long nextTime = Long.MAX_VALUE;
+        long nextTime = hardStopTime > currentTime ? hardStopTime : Long.MAX_VALUE;
 
         if (nextArrivalIndex < allStudents.size()) {
             long arrivalTime = allStudents.get(nextArrivalIndex).getArrivalTime();
@@ -341,14 +382,90 @@ public class SimulationEngine implements Runnable {
             }
         }
 
-        for (Student student : diningStudents) {
-            long diningEndTime = student.getDiningEndTime();
-            if (diningEndTime > currentTime) {
-                nextTime = Math.min(nextTime, diningEndTime);
+        while (!diningCompletionHeap.isEmpty()) {
+            DiningGroupCompletion earliest = diningCompletionHeap.peek();
+            if (!seatedMembersByGroup.containsKey(earliest.groupId)) {
+                diningCompletionHeap.poll();
+                continue;
             }
+            if (earliest.leaveTime > currentTime) {
+                nextTime = Math.min(nextTime, earliest.leaveTime);
+            }
+            break;
+        }
+
+        while (!seatWaitExpirationHeap.isEmpty()) {
+            SeatWaitExpiration expiration = seatWaitExpirationHeap.peek();
+            if (!waitingSeatByGroup.containsKey(expiration.groupId)) {
+                seatWaitExpirationHeap.poll();
+                continue;
+            }
+            if (expiration.expirationTime > currentTime) {
+                nextTime = Math.min(nextTime, expiration.expirationTime);
+            }
+            break;
         }
 
         return nextTime == Long.MAX_VALUE ? currentTime + 1 : nextTime;
+    }
+
+    private long calculateHardStopTime() {
+        long latestArrival = 0L;
+        for (Student student : allStudents) {
+            latestArrival = Math.max(latestArrival, student.getArrivalTime());
+        }
+        long diningAllowance = Math.max(
+                60L * 60L,
+                Math.round(CanteenConfig.DINING_TIME_MEAN + 4.0 * CanteenConfig.DINING_TIME_STD)
+        );
+        long waitingAllowance = Math.max(60L * 60L, CanteenConfig.PATIENCE_MAX * 2L);
+        return latestArrival + diningAllowance + waitingAllowance;
+    }
+
+    private void closeUnfinishedAtHardStop() {
+        String reason = "达到仿真结算边界";
+        for (Student student : allStudents) {
+            StudentStatus status = student.getStatus();
+            if (status == StudentStatus.LEFT_NORMAL
+                    || status == StudentStatus.BALKED
+                    || status == StudentStatus.LEFT_NO_SEAT) {
+                continue;
+            }
+            student.setStatus(status == StudentStatus.WAITING_SEAT || status == StudentStatus.DINING
+                    ? StudentStatus.LEFT_NO_SEAT
+                    : StudentStatus.BALKED);
+            student.setLeaveReason(reason);
+            student.setLeaveTime(currentTime);
+            listener.onStudentLeft(student.getId(), student.getGroupId(), student.getTableId(), reason, currentTime);
+        }
+
+        for (Deque<Student> queue : windowQueues) {
+            queue.clear();
+        }
+        for (int i = 0; i < servingStudents.length; i++) {
+            servingStudents[i] = null;
+            serviceEndTimes[i] = -1L;
+            windowStates.get(i).setBusy(false);
+            updateQueueLength(i);
+        }
+        for (Table table : tables) {
+            Set<Integer> groups = new HashSet<>();
+            for (int groupId : table.getSeatGroupIds()) {
+                if (groupId >= 0) {
+                    groups.add(groupId);
+                }
+            }
+            for (Integer groupId : groups) {
+                table.releaseSeats(groupId, currentTime);
+            }
+            listener.onTableOccupancyChanged(table.getId(), table.getSeatGroupIds());
+        }
+        waitingSeatByGroup.clear();
+        diningStudents.clear();
+        diningCompletionHeap.clear();
+        seatWaitExpirationHeap.clear();
+        tableReservedOrOccupiedSeats.clear();
+        nextArrivalIndex = allStudents.size();
     }
 
     private void checkAndBroadcastPhase() {
@@ -368,7 +485,7 @@ public class SimulationEngine implements Runnable {
         }
     }
 
-    /** 按组处理到达，但排队窗口按每个学生独立随机选择。 */
+    /** 按组处理到达，多人组 70% 概率共同选择同一窗口。 */
     private void processArrivals() {
         while (nextArrivalIndex < allStudents.size()
                 && allStudents.get(nextArrivalIndex).getArrivalTime() <= currentTime) {
@@ -413,9 +530,15 @@ public class SimulationEngine implements Runnable {
         Map<Student, Integer> selectedWindows = new HashMap<>();
         Map<Integer, Integer> addedCountByWindow = new HashMap<>();
         long maxEstimatedWait = 0L;
+        Integer sharedWindowId = null;
+        if (members.size() > 1 && random.nextDouble() < GROUP_SHARED_WINDOW_PROBABILITY) {
+            sharedWindowId = chooseBestWindowForGroup(members);
+        }
 
         for (Student student : members) {
-            int windowId = chooseRandomWindowForStudent();
+            int windowId = sharedWindowId == null
+                    ? chooseBestWindowForStudent(student, addedCountByWindow)
+                    : sharedWindowId;
             selectedWindows.put(student, windowId);
 
             int alreadyAssignedToThisWindow = addedCountByWindow.getOrDefault(windowId, 0);
@@ -455,8 +578,53 @@ public class SimulationEngine implements Runnable {
         }
     }
 
-    private int chooseRandomWindowForStudent() {
-        return random.nextInt(windowQueues.size());
+    private int chooseBestWindowForStudent(Student student, Map<Integer, Integer> addedCountByWindow) {
+        int preferredWindow = Math.floorMod(student.getPreferredWindow(), windowQueues.size());
+        int bestWindow = 0;
+        double bestScore = Double.MAX_VALUE;
+
+        for (int windowId = 0; windowId < windowQueues.size(); windowId++) {
+            Window window = windowStates.get(windowId).getWindow();
+            int addedCount = addedCountByWindow.getOrDefault(windowId, 0);
+            double score = estimateWindowWait(windowId)
+                    + (long) addedCount * window.getAvgServeTime()
+                    + window.getDistanceFromDoor() * WALKING_SECONDS_PER_METER;
+            if (windowId != preferredWindow) {
+                score += NON_PREFERRED_WINDOW_PENALTY_SECONDS;
+            }
+            if (score < bestScore) {
+                bestScore = score;
+                bestWindow = windowId;
+            }
+        }
+        return bestWindow;
+    }
+
+    private int chooseBestWindowForGroup(List<Student> members) {
+        int bestWindow = 0;
+        double bestScore = Double.MAX_VALUE;
+        int groupSize = members == null ? 0 : members.size();
+        for (int windowId = 0; windowId < windowQueues.size(); windowId++) {
+            Window window = windowStates.get(windowId).getWindow();
+            double preferencePenalty = 0.0;
+            if (members != null) {
+                for (Student student : members) {
+                    int preferredWindow = Math.floorMod(student.getPreferredWindow(), windowQueues.size());
+                    if (windowId != preferredWindow) {
+                        preferencePenalty += NON_PREFERRED_WINDOW_PENALTY_SECONDS;
+                    }
+                }
+            }
+            double score = estimateWindowWait(windowId)
+                    + (long) Math.max(0, groupSize - 1) * window.getAvgServeTime()
+                    + window.getDistanceFromDoor() * WALKING_SECONDS_PER_METER
+                    + preferencePenalty / Math.max(1, groupSize);
+            if (score < bestScore) {
+                bestScore = score;
+                bestWindow = windowId;
+            }
+        }
+        return bestWindow;
     }
 
     private long estimateWindowWait(int windowId) {
@@ -506,7 +674,7 @@ public class SimulationEngine implements Runnable {
             student.setStatus(StudentStatus.SERVING);
 
             servingStudents[i] = student;
-            serviceEndTimes[i] = currentTime + Math.max(1, state.getWindow().getAvgServeTime());
+            serviceEndTimes[i] = currentTime + sampleServiceDuration(state.getWindow());
 
             long queueWait = Math.max(0L, currentTime - student.getQueueEnterTime());
             writeEvent(currentTime, "SERVE_START", student.getId(), student.getGroupId(), i, -1, queueWait, -1, -1,
@@ -514,6 +682,19 @@ public class SimulationEngine implements Runnable {
 
             updateQueueLength(i);
         }
+    }
+
+    /**
+     * Service duration uses a bounded normal fluctuation around the configured
+     * mean. The engine-level seeded Random keeps repeated runs reproducible.
+     */
+    private long sampleServiceDuration(Window window) {
+        double mean = Math.max(1.0, window.getAvgServeTime());
+        double standardDeviation = Math.max(1.0, mean * 0.15);
+        double sampled = mean + random.nextGaussian() * standardDeviation;
+        double lowerBound = mean * 0.70;
+        double upperBound = mean * 1.30;
+        return Math.max(1L, Math.round(Math.max(lowerBound, Math.min(upperBound, sampled))));
     }
 
     private void processServiceCompletions() {
@@ -540,6 +721,13 @@ public class SimulationEngine implements Runnable {
             waitingSeatByGroup
                     .computeIfAbsent(student.getGroupId(), k -> new ArrayList<>())
                     .add(student);
+            seatGroupsToProcess.add(student.getGroupId());
+            long queueWait = Math.max(0L, student.getServiceStartTime() - student.getQueueEnterTime());
+            long remainingPatience = Math.max(1L, student.getPatience() - queueWait);
+            seatWaitExpirationHeap.offer(new SeatWaitExpiration(
+                    student.getGroupId(),
+                    currentTime + remainingPatience
+            ));
 
             long serviceDuration = Math.max(0L, currentTime - student.getServiceStartTime());
             writeEvent(currentTime, "SERVE_END", student.getId(), student.getGroupId(), i, -1,
@@ -553,20 +741,31 @@ public class SimulationEngine implements Runnable {
      * 同组第一批成员找到桌位后，后端立即为整组锁定容量；后续成员打完饭后直接坐到原桌。
      */
     private void trySeatWaitingGroups() {
-        Iterator<Map.Entry<Integer, List<Student>>> iterator = waitingSeatByGroup.entrySet().iterator();
+        List<Integer> groupIds;
+        if (retryAllWaitingSeatGroups) {
+            groupIds = new ArrayList<>(waitingSeatByGroup.keySet());
+            retryAllWaitingSeatGroups = false;
+            seatGroupsToProcess.clear();
+        } else {
+            groupIds = new ArrayList<>(seatGroupsToProcess);
+            seatGroupsToProcess.clear();
+        }
+        groupIds.sort(Comparator.comparingLong(this::oldestSeatWaitStart));
 
-        while (iterator.hasNext()) {
-            Map.Entry<Integer, List<Student>> entry = iterator.next();
-            int groupId = entry.getKey();
-            List<Student> readyMembers = entry.getValue();
+        for (int groupId : groupIds) {
+            List<Student> readyMembers = waitingSeatByGroup.get(groupId);
             if (readyMembers == null || readyMembers.isEmpty()) {
-                iterator.remove();
+                waitingSeatByGroup.remove(groupId);
                 continue;
             }
 
             List<Student> allMembers = groupMembers.get(groupId);
             if (allMembers == null || allMembers.isEmpty()) {
-                iterator.remove();
+                waitingSeatByGroup.remove(groupId);
+                continue;
+            }
+            if (shouldAbandonWhileWaitingForSeat(allMembers)) {
+                abandonWaitingSeatGroup(groupId, allMembers);
                 continue;
             }
 
@@ -590,7 +789,70 @@ public class SimulationEngine implements Runnable {
             }
 
             seatReadyMembersAtTable(groupId, tableId, readyMembers);
-            iterator.remove();
+            waitingSeatByGroup.remove(groupId);
+        }
+    }
+
+    private void processSeatWaitAbandonments() {
+        while (!seatWaitExpirationHeap.isEmpty()
+                && seatWaitExpirationHeap.peek().expirationTime <= currentTime) {
+            SeatWaitExpiration expiration = seatWaitExpirationHeap.poll();
+            List<Student> allMembers = groupMembers.get(expiration.groupId);
+            if (!waitingSeatByGroup.containsKey(expiration.groupId)
+                    || allMembers == null
+                    || allMembers.isEmpty()) {
+                continue;
+            }
+            if (shouldAbandonWhileWaitingForSeat(allMembers)) {
+                abandonWaitingSeatGroup(expiration.groupId, allMembers);
+            }
+        }
+    }
+
+    private long oldestSeatWaitStart(int groupId) {
+        List<Student> members = waitingSeatByGroup.get(groupId);
+        long oldest = Long.MAX_VALUE;
+        if (members != null) {
+            for (Student member : members) {
+                if (member.getServiceEndTime() >= 0) {
+                    oldest = Math.min(oldest, member.getServiceEndTime());
+                }
+            }
+        }
+        return oldest;
+    }
+
+    private boolean shouldAbandonWhileWaitingForSeat(List<Student> allMembers) {
+        for (Student member : allMembers) {
+            if (member.getServiceEndTime() < 0) {
+                return false;
+            }
+        }
+        for (Student member : allMembers) {
+            long queueWait = Math.max(0L, member.getServiceStartTime() - member.getQueueEnterTime());
+            long seatWait = Math.max(0L, currentTime - member.getServiceEndTime());
+            if (queueWait + seatWait >= member.getPatience()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void abandonWaitingSeatGroup(int groupId, List<Student> allMembers) {
+        String reason = "排队与等座总等待超过耐心值";
+        abandonedGroups.add(groupId);
+        waitingSeatByGroup.remove(groupId);
+        for (Student student : allMembers) {
+            student.setStatus(StudentStatus.LEFT_NO_SEAT);
+            student.setLeaveReason(reason);
+            student.setLeaveTime(currentTime);
+            listener.onStudentLeft(student.getId(), student.getGroupId(), -1, reason, currentTime);
+            writeEvent(currentTime, "LEFT_NO_SEAT", student.getId(), student.getGroupId(),
+                    student.getFinalWindowId(), -1,
+                    Math.max(0L, student.getServiceStartTime() - student.getQueueEnterTime()),
+                    Math.max(0L, currentTime - student.getServiceEndTime()),
+                    -1,
+                    "学生因等座过久离开");
         }
     }
 
@@ -603,6 +865,7 @@ public class SimulationEngine implements Runnable {
             throw new IllegalStateException("table capacity exceeded while reserving seats");
         }
 
+        moveTableReservationBucket(tableId, oldReservedOrOccupied, newReservedOrOccupied);
         groupAssignedTable.put(groupId, tableId);
         groupReservedSeats.put(groupId, groupSize);
         tableReservedOrOccupiedSeats.put(tableId, newReservedOrOccupied);
@@ -650,93 +913,63 @@ public class SimulationEngine implements Runnable {
                     "学生入座桌 " + (tableId + 1));
         }
 
+        List<Student> allMembers = groupMembers.get(groupId);
+        if (allMembers != null && seatedMembers.size() == allMembers.size()) {
+            long leaveTime = currentTime;
+            for (Student student : seatedMembers) {
+                leaveTime = Math.max(leaveTime, student.getDiningEndTime());
+            }
+            diningCompletionHeap.offer(new DiningGroupCompletion(groupId, leaveTime));
+        }
+
         listener.onTableOccupancyChanged(tableId, table.getSeatGroupIds());
     }
 
     /** 优先找能容纳整组人数的空桌。 */
     private int findRandomFreeTableForGroup(int groupSize) {
-        List<Integer> candidates = new ArrayList<>();
-
-        for (Table table : tables) {
-            int reservedOrOccupied = tableReservedOrOccupiedSeats.getOrDefault(table.getId(), 0);
-            if (reservedOrOccupied == 0 && table.getCapacity() >= groupSize) {
-                candidates.add(table.getId());
-            }
-        }
-
-        if (candidates.isEmpty()) {
-            return -1;
-        }
-
-        return candidates.get(random.nextInt(candidates.size()));
+        return pickRandomTableWithCapacity(tableIdsByReservedSeatCount.get(0), groupSize);
     }
 
     /** 无空桌时才允许拼桌，且不能占用其他组已经锁定的容量。 */
     private int findSharedTableForGroup(int groupSize) {
-        List<Integer> candidates = new ArrayList<>();
-
-        for (Table table : tables) {
-            int reservedOrOccupied = tableReservedOrOccupiedSeats.getOrDefault(table.getId(), 0);
-            if (reservedOrOccupied <= 0) {
-                continue;
-            }
-
-            int emptySeats = table.getCapacity() - reservedOrOccupied;
-            if (emptySeats >= groupSize) {
-                candidates.add(table.getId());
+        for (int reservedSeatCount = tableIdsByReservedSeatCount.size() - 1;
+             reservedSeatCount > 0;
+             reservedSeatCount--) {
+            int tableId = pickRandomTableWithCapacity(
+                    tableIdsByReservedSeatCount.get(reservedSeatCount),
+                    groupSize
+            );
+            if (tableId >= 0) {
+                return tableId;
             }
         }
+        return -1;
+    }
 
-        if (candidates.isEmpty()) {
+    private int pickRandomTableWithCapacity(RandomAccessIntSet tableIds, int requiredSeats) {
+        int selectedTableId = tableIds.getRandom(random);
+        if (selectedTableId < 0) {
             return -1;
         }
-
-        int bestId = -1;
-        int bestEmptySeats = Integer.MAX_VALUE;
-        for (int tableId : candidates) {
-            Table table = tables.get(tableId);
-            int emptySeats = table.getCapacity() - tableReservedOrOccupiedSeats.getOrDefault(tableId, 0);
-            if (emptySeats < bestEmptySeats) {
-                bestEmptySeats = emptySeats;
-                bestId = tableId;
-            } else if (emptySeats == bestEmptySeats && random.nextBoolean()) {
-                bestId = tableId;
-            }
-        }
-        return bestId;
+        Table table = tables.get(selectedTableId);
+        int reservedOrOccupied = tableReservedOrOccupiedSeats.getOrDefault(selectedTableId, 0);
+        return table.getCapacity() - reservedOrOccupied >= requiredSeats ? selectedTableId : -1;
     }
 
     /** 同组必须全部实际入座，并且全部达到各自就餐结束时间后，整组一起离开。 */
     private void processDiningCompletions() {
-        Iterator<Map.Entry<Integer, List<Student>>> iterator = seatedMembersByGroup.entrySet().iterator();
         Set<Integer> changedTables = new LinkedHashSet<>();
 
-        while (iterator.hasNext()) {
-            Map.Entry<Integer, List<Student>> entry = iterator.next();
-            int groupId = entry.getKey();
-            List<Student> seatedMembers = entry.getValue();
-            List<Student> allMembers = groupMembers.get(groupId);
-
-            if (allMembers == null || seatedMembers == null || seatedMembers.isEmpty()) {
-                iterator.remove();
-                continue;
+        while (!diningCompletionHeap.isEmpty()) {
+            DiningGroupCompletion completion = diningCompletionHeap.peek();
+            if (completion.leaveTime > currentTime) {
+                break;
             }
+            diningCompletionHeap.poll();
 
-            if (seatedMembers.size() < allMembers.size()) {
-                continue;
-            }
-
-            boolean allFinished = true;
-            long groupLeaveTime = currentTime;
-            for (Student student : seatedMembers) {
-                if (student.getDiningEndTime() > currentTime) {
-                    allFinished = false;
-                    break;
-                }
-                groupLeaveTime = Math.max(groupLeaveTime, student.getDiningEndTime());
-            }
-
-            if (!allFinished) {
+            int groupId = completion.groupId;
+            List<Student> seatedMembers = seatedMembersByGroup.remove(groupId);
+            if (seatedMembers == null || seatedMembers.isEmpty()) {
                 continue;
             }
 
@@ -748,10 +981,10 @@ public class SimulationEngine implements Runnable {
             for (Student student : seatedMembers) {
                 student.setStatus(StudentStatus.LEFT_NORMAL);
                 student.setLeaveReason("正常就餐结束");
-                student.setLeaveTime(groupLeaveTime);
+                student.setLeaveTime(completion.leaveTime);
                 diningStudents.remove(student);
-                listener.onStudentLeft(student.getId(), student.getGroupId(), tableId, student.getLeaveReason(), groupLeaveTime);
-                writeEvent(groupLeaveTime, "LEAVE", student.getId(), student.getGroupId(), student.getFinalWindowId(), tableId,
+                listener.onStudentLeft(student.getId(), student.getGroupId(), tableId, student.getLeaveReason(), completion.leaveTime);
+                writeEvent(completion.leaveTime, "LEAVE", student.getId(), student.getGroupId(), student.getFinalWindowId(), tableId,
                         Math.max(0L, student.getServiceStartTime() - student.getQueueEnterTime()),
                         Math.max(0L, student.getSeatAssignedTime() - student.getServiceEndTime()),
                         Math.max(0L, student.getDiningEndTime() - student.getDiningStartTime()),
@@ -763,7 +996,9 @@ public class SimulationEngine implements Runnable {
                 table.releaseSeats(groupId, currentTime);
 
                 int reservedSeats = groupReservedSeats.getOrDefault(groupId, seatedMembers.size());
-                int remainingReservedOrOccupied = tableReservedOrOccupiedSeats.getOrDefault(tableId, 0) - reservedSeats;
+                int oldReservedOrOccupied = tableReservedOrOccupiedSeats.getOrDefault(tableId, 0);
+                int remainingReservedOrOccupied = oldReservedOrOccupied - reservedSeats;
+                moveTableReservationBucket(tableId, oldReservedOrOccupied, Math.max(0, remainingReservedOrOccupied));
                 if (remainingReservedOrOccupied <= 0) {
                     tableReservedOrOccupiedSeats.remove(tableId);
                 } else {
@@ -775,8 +1010,8 @@ public class SimulationEngine implements Runnable {
 
             groupAssignedTable.remove(groupId);
             groupReservedSeats.remove(groupId);
+            retryAllWaitingSeatGroups = true;
             groupLeaveCount++;
-            iterator.remove();
         }
 
         for (int tableId : changedTables) {
@@ -835,6 +1070,27 @@ public class SimulationEngine implements Runnable {
         return result;
     }
 
+    private List<RandomAccessIntSet> initTableReservationBuckets() {
+        int maxCapacity = 0;
+        for (Table table : tables) {
+            maxCapacity = Math.max(maxCapacity, table.getCapacity());
+        }
+
+        List<RandomAccessIntSet> buckets = new ArrayList<>(maxCapacity + 1);
+        for (int i = 0; i <= maxCapacity; i++) {
+            buckets.add(new RandomAccessIntSet());
+        }
+        for (Table table : tables) {
+            buckets.get(0).add(table.getId());
+        }
+        return buckets;
+    }
+
+    private void moveTableReservationBucket(int tableId, int oldSeatCount, int newSeatCount) {
+        tableIdsByReservedSeatCount.get(oldSeatCount).remove(tableId);
+        tableIdsByReservedSeatCount.get(newSeatCount).add(tableId);
+    }
+
     /** Added for backend auto-optimization: collect aggregate samples without requiring CSV output. */
     private void sampleCurrentState() {
         sampleCurrentState(1L);
@@ -850,8 +1106,13 @@ public class SimulationEngine implements Runnable {
         occupiedSeatsSum += getActualSeatedSeatCount() * duration;
         seatSampleCount += duration;
 
+        occupiedTableSum += getActualSeatedTableCount() * duration;
+        tableSampleCount += duration;
+
         busyWindowSum += getBusyWindowCount() * duration;
         windowSampleCount += duration;
+        maxWaitingSeatCount = Math.max(maxWaitingSeatCount, getWaitingSeatCount());
+        broadcastSnapshot(false);
     }
 
     private void recordReplaySnapshotIfNeeded() {
@@ -872,38 +1133,352 @@ public class SimulationEngine implements Runnable {
         snapshot.totalSeats = getTotalSeatCount();
         snapshot.emptySeats = Math.max(0, snapshot.totalSeats - snapshot.occupiedSeats);
         snapshot.diningStudents = diningStudents.size();
-        snapshot.arrivedStudents = countStudentsNotInStatus(StudentStatus.ARRIVING);
-        snapshot.servedStudents = countServedStudents();
-        snapshot.finishedStudents = countStudentsInStatus(StudentStatus.LEFT_NORMAL);
-        snapshot.abandonedStudents = countAbandonedStudents();
+        snapshot.waitingSeatStudents = getWaitingSeatCount();
+        snapshot.windowUtilization = currentWindowUtilization();
+        snapshot.tableUtilization = currentTableUtilization();
+
+        int arrived = 0, served = 0, finished = 0, abandoned = 0;
+        for (Student student : allStudents) {
+            if (student.getStatus() != StudentStatus.ARRIVING) arrived++;
+            if (student.getServiceEndTime() >= 0) served++;
+            if (student.getStatus() == StudentStatus.LEFT_NORMAL) finished++;
+            if (student.getStatus() == StudentStatus.BALKED
+                    || student.getStatus() == StudentStatus.LEFT_NO_SEAT) abandoned++;
+        }
+        snapshot.arrivedStudents = arrived;
+        snapshot.servedStudents = served;
+        snapshot.finishedStudents = finished;
+        snapshot.abandonedStudents = abandoned;
         return snapshot;
+    }
+
+    private void broadcastSnapshot(boolean force) {
+        if (!CanteenConfig.LISTENER_ENABLED) {
+            return;
+        }
+        long interval = Math.max(1L, CanteenConfig.SNAPSHOT_INTERVAL);
+        if (!force && lastSnapshotBroadcastTime >= 0 && currentTime - lastSnapshotBroadcastTime < interval) {
+            return;
+        }
+        if (force && lastSnapshotBroadcastTime == currentTime) {
+            return;
+        }
+
+        SimulationSnapshot snapshot = buildSimulationSnapshot();
+        TrendPoint point = new TrendPoint();
+        point.timeSecond = currentTime;
+        point.queueingCount = snapshot.queueingCount;
+        point.waitingSeatCount = snapshot.waitingSeatCount;
+        point.windowUtilizationRate = snapshot.windowUtilizationRate;
+        point.tableUtilizationRate = snapshot.tableUtilizationRate;
+        point.completedCount = snapshot.completedCount;
+        point.abandonedCount = snapshot.abandonedCount;
+        trendPoints.add(point);
+        if (trendPoints.size() > MAX_TREND_POINTS) {
+            trendPoints.remove(0);
+        }
+        snapshot.trendPoints = copyTrendPoints();
+        lastSnapshotBroadcastTime = currentTime;
+        listener.onSnapshot(snapshot);
+    }
+
+    /**
+     * Builds the single source of truth consumed by the Swing decision
+     * dashboard. All KPI values are calculated from current engine state.
+     */
+    private SimulationSnapshot buildSimulationSnapshot() {
+        SimulationSnapshot snapshot = new SimulationSnapshot();
+        snapshot.currentTime = currentTime;
+        snapshot.totalStudents = allStudents.size();
+        snapshot.renderMode = chooseRenderMode(allStudents.size());
+
+        List<Long> queueWaits = new ArrayList<>();
+        List<Long> seatWaits = new ArrayList<>();
+        List<Long> stayTimes = new ArrayList<>();
+        long[] perWindowWaitSum = new long[windowStates.size()];
+        int[] perWindowWaitCount = new int[windowStates.size()];
+
+        for (Student student : allStudents) {
+            StudentStatus status = student.getStatus();
+            if (status != StudentStatus.ARRIVING) snapshot.arrivedCount++;
+            if (status == StudentStatus.QUEUING) snapshot.queueingCount++;
+            if (status == StudentStatus.SERVING) snapshot.servingCount++;
+            if (status == StudentStatus.WAITING_SEAT) snapshot.waitingSeatCount++;
+            if (status == StudentStatus.DINING) snapshot.diningCount++;
+            if (status == StudentStatus.LEFT_NORMAL) snapshot.completedCount++;
+            if (status == StudentStatus.BALKED || status == StudentStatus.LEFT_NO_SEAT) snapshot.abandonedCount++;
+
+            if (student.getQueueEnterTime() >= 0) {
+                long queueEnd = student.getServiceStartTime() >= 0
+                        ? student.getServiceStartTime()
+                        : currentTime;
+                long queueWait = Math.max(0L, queueEnd - student.getQueueEnterTime());
+                queueWaits.add(queueWait);
+                int windowId = student.getFinalWindowId();
+                if (windowId >= 0 && windowId < perWindowWaitSum.length) {
+                    perWindowWaitSum[windowId] += queueWait;
+                    perWindowWaitCount[windowId]++;
+                }
+            }
+
+            if (student.getServiceEndTime() >= 0) {
+                long seatEnd = student.getSeatAssignedTime() >= 0
+                        ? student.getSeatAssignedTime()
+                        : (student.getLeaveTime() >= 0 ? student.getLeaveTime() : currentTime);
+                seatWaits.add(Math.max(0L, seatEnd - student.getServiceEndTime()));
+            }
+
+            if (status != StudentStatus.ARRIVING) {
+                long stayEnd = student.getLeaveTime() >= 0 ? student.getLeaveTime() : currentTime;
+                stayTimes.add(Math.max(0L, stayEnd - student.getArrivalTime()));
+            }
+        }
+
+        snapshot.completionRate = ratio(snapshot.completedCount, snapshot.totalStudents);
+        snapshot.abandonRate = ratio(snapshot.abandonedCount, snapshot.totalStudents);
+        snapshot.avgQueueWaitSeconds = average(queueWaits);
+        snapshot.p95QueueWaitSeconds = percentile(queueWaits, 0.95);
+        snapshot.avgSeatWaitSeconds = average(seatWaits);
+        snapshot.p95SeatWaitSeconds = percentile(seatWaits, 0.95);
+        snapshot.avgTotalStaySeconds = average(stayTimes);
+        snapshot.p95TotalStaySeconds = percentile(stayTimes, 0.95);
+        snapshot.maxQueueLength = maxTotalQueueLength;
+        snapshot.maxWaitingSeatCount = maxWaitingSeatCount;
+        snapshot.windowUtilizationRate = currentWindowUtilization();
+        snapshot.tableUtilizationRate = currentTableUtilization();
+        snapshot.seatUtilizationRate = currentSeatUtilization();
+        populateEconomics(snapshot, snapshot.completedCount, snapshot.abandonedCount);
+        snapshot.windowStats = buildWindowStats(perWindowWaitSum, perWindowWaitCount);
+        snapshot.tableStats = buildTableStats();
+        snapshot.tableMatrix = buildTableMatrix(snapshot.tableStats);
+        snapshot.trendPoints = copyTrendPoints();
+        return snapshot;
+    }
+
+    private List<WindowStat> buildWindowStats(long[] waitSums, int[] waitCounts) {
+        List<WindowStat> stats = new ArrayList<>();
+        double elapsed = Math.max(1.0, currentTime);
+        for (int i = 0; i < windowStates.size(); i++) {
+            WindowState state = windowStates.get(i);
+            WindowStat stat = new WindowStat();
+            stat.windowId = i;
+            stat.type = state.getWindow().getAvgServeTime() <= 45 ? "FAST" : "SLOW";
+            stat.queueLength = windowQueues.get(i).size();
+            stat.serving = servingStudents[i] != null;
+            stat.avgWaitMinutes = waitCounts[i] == 0 ? 0.0 : waitSums[i] / (double) waitCounts[i] / 60.0;
+            stat.servedCount = state.getServedCount();
+            long busySeconds = state.getTotalBusyTime();
+            if (servingStudents[i] != null) {
+                busySeconds += Math.max(0L, currentTime - servingStudents[i].getServiceStartTime());
+            }
+            stat.utilizationRate = clamp01(busySeconds / elapsed);
+            double estimatedWaitMinutes = (stat.queueLength + (stat.serving ? 1 : 0))
+                    * state.getWindow().getAvgServeTime() / 60.0;
+            stat.pressureLevel = pressureForWait(estimatedWaitMinutes);
+            stats.add(stat);
+        }
+        return stats;
+    }
+
+    private List<TableStat> buildTableStats() {
+        List<TableStat> stats = new ArrayList<>(tables.size());
+        for (Table table : tables) {
+            TableStat stat = new TableStat();
+            stat.tableId = table.getId();
+            stat.capacity = table.getCapacity();
+            stat.occupiedSeats = table.getOccupiedSeatCount();
+            stat.expectedReleaseTime = expectedReleaseTime(table.getId());
+            if (stat.occupiedSeats == 0) {
+                stat.status = TableStatus.EMPTY;
+            } else if (stat.expectedReleaseTime >= currentTime
+                    && stat.expectedReleaseTime - currentTime <= 5 * 60L) {
+                stat.status = TableStatus.RELEASING_SOON;
+            } else if (stat.occupiedSeats >= stat.capacity) {
+                stat.status = TableStatus.FULL;
+            } else if (stat.occupiedSeats >= Math.max(1, stat.capacity - 1)) {
+                stat.status = TableStatus.NEAR_FULL;
+            } else {
+                stat.status = TableStatus.PARTIAL;
+            }
+            stats.add(stat);
+        }
+        return stats;
+    }
+
+    private long expectedReleaseTime(int tableId) {
+        long releaseTime = -1L;
+        for (Student student : diningStudents) {
+            if (student.getTableId() == tableId) {
+                releaseTime = Math.max(releaseTime, student.getDiningEndTime());
+            }
+        }
+        return releaseTime;
+    }
+
+    private int[][] buildTableMatrix(List<TableStat> stats) {
+        if (stats.isEmpty()) {
+            return new int[0][0];
+        }
+        int columns = Math.min(10, Math.max(1, (int) Math.ceil(Math.sqrt(stats.size()))));
+        int rows = (int) Math.ceil(stats.size() / (double) columns);
+        int[][] matrix = new int[rows][columns];
+        for (int i = 0; i < stats.size(); i++) {
+            matrix[i / columns][i % columns] = tableStatusCode(stats.get(i).status);
+        }
+        return matrix;
+    }
+
+    private int tableStatusCode(TableStatus status) {
+        switch (status) {
+            case PARTIAL:
+                return 1;
+            case NEAR_FULL:
+                return 2;
+            case FULL:
+                return 3;
+            case RELEASING_SOON:
+                return 4;
+            default:
+                return 0;
+        }
+    }
+
+    private void populateEconomics(SimulationSnapshot snapshot, int completed, int abandoned) {
+        double openHours = CanteenConfig.getEffectiveOpenHours();
+        snapshot.grossRevenue = completed * CanteenConfig.AVG_MEAL_PRICE;
+        snapshot.windowCost = windowStates.size() * CanteenConfig.WINDOW_COST_PER_HOUR * openHours;
+        snapshot.tableCost = tables.size() * CanteenConfig.TABLE_COST;
+        snapshot.lostOpportunityCost = abandoned * CanteenConfig.LOST_STUDENT_PENALTY;
+        snapshot.netProfit = snapshot.grossRevenue
+                - snapshot.windowCost
+                - snapshot.tableCost
+                - snapshot.lostOpportunityCost;
+    }
+
+    private List<TrendPoint> copyTrendPoints() {
+        List<TrendPoint> copy = new ArrayList<>(trendPoints.size());
+        for (TrendPoint point : trendPoints) {
+            copy.add(point.copy());
+        }
+        return copy;
+    }
+
+    private RenderMode chooseRenderMode(int studentCount) {
+        if (studentCount <= 300) {
+            return RenderMode.INDIVIDUAL;
+        }
+        if (studentCount <= 1500) {
+            return RenderMode.GROUPED;
+        }
+        return RenderMode.DENSITY;
+    }
+
+    private PressureLevel pressureForWait(double estimatedWaitMinutes) {
+        if (estimatedWaitMinutes < 3.0) {
+            return PressureLevel.LOW;
+        }
+        if (estimatedWaitMinutes < 8.0) {
+            return PressureLevel.MEDIUM;
+        }
+        if (estimatedWaitMinutes < 15.0) {
+            return PressureLevel.HIGH;
+        }
+        return PressureLevel.OVERLOAD;
+    }
+
+    private double currentWindowUtilization() {
+        return windowSampleCount == 0 || windowStates.isEmpty()
+                ? 0.0
+                : clamp01(busyWindowSum / (double) (windowSampleCount * windowStates.size()));
+    }
+
+    private double currentTableUtilization() {
+        return tableSampleCount == 0 || tables.isEmpty()
+                ? 0.0
+                : clamp01(occupiedTableSum / (double) (tableSampleCount * tables.size()));
+    }
+
+    private double currentSeatUtilization() {
+        return seatSampleCount == 0 || getTotalSeatCount() == 0
+                ? 0.0
+                : clamp01(occupiedSeatsSum / (double) (seatSampleCount * getTotalSeatCount()));
+    }
+
+    private double average(List<Long> values) {
+        if (values.isEmpty()) {
+            return 0.0;
+        }
+        long total = 0L;
+        for (Long value : values) {
+            total += value;
+        }
+        return total / (double) values.size();
+    }
+
+    private double ratio(int numerator, int denominator) {
+        return denominator <= 0 ? 0.0 : numerator / (double) denominator;
+    }
+
+    private double clamp01(double value) {
+        return Math.max(0.0, Math.min(1.0, value));
     }
 
     /** Added for backend auto-optimization: produce final statistics for adapters and loss evaluation. */
     private void finalizeStatistics() {
         int totalStudents = allStudents.size();
-        int arrivedStudents = countStudentsNotInStatus(StudentStatus.ARRIVING);
-        int servedStudents = countServedStudents();
-        int finishedStudents = countStudentsInStatus(StudentStatus.LEFT_NORMAL);
-        int abandonedStudents = countAbandonedStudents();
-
+        int arrivedStudents = 0;
+        int servedStudents = 0;
+        int finishedStudents = 0;
+        int abandonedStudents = 0;
         double totalWait = 0.0;
         int waitCount = 0;
+        List<Long> waitTimes = new ArrayList<>();
+        List<Long> seatWaitTimes = new ArrayList<>();
+        List<Long> totalStayTimes = new ArrayList<>();
         for (Student student : allStudents) {
+            if (student.getStatus() != StudentStatus.ARRIVING) arrivedStudents++;
+            if (student.getServiceEndTime() >= 0) servedStudents++;
+            if (student.getStatus() == StudentStatus.LEFT_NORMAL) finishedStudents++;
+            if (student.getStatus() == StudentStatus.BALKED
+                    || student.getStatus() == StudentStatus.LEFT_NO_SEAT) abandonedStudents++;
             long waitTime = student.getWaitTime();
             if (waitTime >= 0) {
                 totalWait += waitTime;
                 waitCount++;
+                waitTimes.add(waitTime);
+            }
+            if (student.getServiceEndTime() >= 0) {
+                long seatWaitEnd = student.getSeatAssignedTime() >= 0
+                        ? student.getSeatAssignedTime()
+                        : (student.getLeaveTime() >= 0 ? student.getLeaveTime() : currentTime);
+                seatWaitTimes.add(Math.max(0L, seatWaitEnd - student.getServiceEndTime()));
+            }
+            if (student.getStatus() != StudentStatus.ARRIVING) {
+                long stayEnd = student.getLeaveTime() >= 0 ? student.getLeaveTime() : currentTime;
+                totalStayTimes.add(Math.max(0L, stayEnd - student.getArrivalTime()));
             }
         }
         double avgWaitSeconds = waitCount == 0 ? 0.0 : totalWait / waitCount;
+        double p95WaitSeconds = percentile(waitTimes, 0.95);
+        double avgSeatWaitSeconds = average(seatWaitTimes);
+        double p95SeatWaitSeconds = percentile(seatWaitTimes, 0.95);
+        double avgTotalStaySeconds = average(totalStayTimes);
+        double p95TotalStaySeconds = percentile(totalStayTimes, 0.95);
         double avgQueueLength = queueSampleCount == 0 ? 0.0 : queueLengthSum * 1.0 / queueSampleCount;
         double seatUtilization = seatSampleCount == 0 || getTotalSeatCount() == 0
                 ? 0.0
                 : occupiedSeatsSum * 1.0 / (seatSampleCount * getTotalSeatCount());
+        double tableUtilization = tableSampleCount == 0 || tables.isEmpty()
+                ? 0.0
+                : occupiedTableSum * 1.0 / (tableSampleCount * tables.size());
         double windowUtilization = windowSampleCount == 0 || windowStates.isEmpty()
                 ? 0.0
                 : busyWindowSum * 1.0 / (windowSampleCount * windowStates.size());
+        double openHours = CanteenConfig.getEffectiveOpenHours();
+        double grossRevenue = finishedStudents * CanteenConfig.AVG_MEAL_PRICE;
+        double windowCost = windowStates.size() * CanteenConfig.WINDOW_COST_PER_HOUR * openHours;
+        double tableCost = tables.size() * CanteenConfig.TABLE_COST;
+        double lostOpportunityCost = abandonedStudents * CanteenConfig.LOST_STUDENT_PENALTY;
 
         statisticsResult.setWindowCount(windowStates.size());
         statisticsResult.setTableCount(tables.size());
@@ -914,13 +1489,35 @@ public class SimulationEngine implements Runnable {
         statisticsResult.setAbandonedStudents(abandonedStudents);
         statisticsResult.setAvgWaitTimeSeconds(avgWaitSeconds);
         statisticsResult.setAvgWaitTimeMinutes(avgWaitSeconds / 60.0);
+        statisticsResult.setP95WaitTimeSeconds(p95WaitSeconds);
+        statisticsResult.setAvgSeatWaitTimeSeconds(avgSeatWaitSeconds);
+        statisticsResult.setP95SeatWaitTimeSeconds(p95SeatWaitSeconds);
+        statisticsResult.setAvgTotalStayTimeSeconds(avgTotalStaySeconds);
+        statisticsResult.setP95TotalStayTimeSeconds(p95TotalStaySeconds);
         statisticsResult.setMaxQueueLength(maxTotalQueueLength);
+        statisticsResult.setMaxWaitingSeatCount(maxWaitingSeatCount);
         statisticsResult.setAvgQueueLength(avgQueueLength);
         statisticsResult.setSeatUtilization(seatUtilization);
+        statisticsResult.setTableUtilization(tableUtilization);
         statisticsResult.setWindowUtilization(windowUtilization);
         statisticsResult.setFinishRate(totalStudents == 0 ? 0.0 : finishedStudents * 1.0 / totalStudents);
         statisticsResult.setAbandonRate(totalStudents == 0 ? 0.0 : abandonedStudents * 1.0 / totalStudents);
+        statisticsResult.setGrossRevenue(grossRevenue);
+        statisticsResult.setWindowCost(windowCost);
+        statisticsResult.setTableCost(tableCost);
+        statisticsResult.setLostOpportunityCost(lostOpportunityCost);
+        statisticsResult.setNetProfit(grossRevenue - windowCost - tableCost - lostOpportunityCost);
         statisticsResult.setRuntimeMs(runStartWallMs == 0L ? 0L : System.currentTimeMillis() - runStartWallMs);
+    }
+
+    private double percentile(List<Long> values, double percentile) {
+        if (values.isEmpty()) {
+            return 0.0;
+        }
+        List<Long> sorted = new ArrayList<>(values);
+        Collections.sort(sorted);
+        int index = (int) Math.ceil(percentile * sorted.size()) - 1;
+        return sorted.get(Math.max(0, Math.min(index, sorted.size() - 1)));
     }
 
     private void openReportWriters() {
@@ -1035,13 +1632,17 @@ public class SimulationEngine implements Runnable {
     }
 
     private void writeCurrentSnapshot() {
+        int interval = Math.max(1, CanteenConfig.SNAPSHOT_INTERVAL);
+        boolean shouldWrite = currentTime == 0 || currentTime % interval == 0 || isSimulationFinished();
+        if (!shouldWrite) {
+            return;
+        }
+
         Snapshot snapshot = buildCurrentSnapshot();
         snapshots.add(snapshot);
         updateSampleAccumulators(snapshot);
 
-        int interval = Math.max(1, CanteenConfig.SNAPSHOT_INTERVAL);
-        boolean shouldWrite = snapshot.timeSecond == 0 || snapshot.timeSecond % interval == 0 || isSimulationFinished();
-        if (timelineWriter == null || !shouldWrite) {
+        if (timelineWriter == null) {
             return;
         }
 
@@ -1070,12 +1671,18 @@ public class SimulationEngine implements Runnable {
                         escapeCsv(snapshot.actualTableSeatGroups) + "," +
                         escapeCsv(snapshot.tableReservationCounts)
         );
-        timelineWriter.flush();
     }
 
     private Snapshot buildCurrentSnapshot() {
         int totalStudents = allStudents.size();
-        int arrivedStudents = countStudentsNotInStatus(StudentStatus.ARRIVING);
+        int arrivedStudents = 0, leftNormally = 0, balkedStudents = 0, leftNoSeatStudents = 0;
+        for (Student student : allStudents) {
+            StudentStatus s = student.getStatus();
+            if (s != StudentStatus.ARRIVING) arrivedStudents++;
+            if (s == StudentStatus.LEFT_NORMAL) leftNormally++;
+            else if (s == StudentStatus.BALKED) balkedStudents++;
+            else if (s == StudentStatus.LEFT_NO_SEAT) leftNoSeatStudents++;
+        }
         int notArrivedStudents = totalStudents - arrivedStudents;
         int totalQueuing = getTotalQueueLength();
         int servingCount = getServingCount();
@@ -1086,9 +1693,6 @@ public class SimulationEngine implements Runnable {
         int reservedOrOccupiedTableCount = getReservedOrOccupiedTableCount();
         int reservedOrOccupiedSeatCount = getReservedOrOccupiedSeatCount();
         int lockedOnlySeatCount = Math.max(0, reservedOrOccupiedSeatCount - actualSeatedSeatCount);
-        int leftNormally = countStudentsInStatus(StudentStatus.LEFT_NORMAL);
-        int balkedStudents = countStudentsInStatus(StudentStatus.BALKED);
-        int leftNoSeatStudents = countStudentsInStatus(StudentStatus.LEFT_NO_SEAT);
         int totalSeats = tables.size() * 4;
         double tableUtilization = totalSeats <= 0 ? 0.0 : actualSeatedSeatCount * 100.0 / totalSeats;
         double reservedCapacityUtilization = totalSeats <= 0 ? 0.0 : reservedOrOccupiedSeatCount * 100.0 / totalSeats;
@@ -1155,7 +1759,6 @@ public class SimulationEngine implements Runnable {
                         emptyIfNegative(durationSecond) + "," +
                         escapeCsv(description)
         );
-        eventWriter.flush();
     }
 
     private void closeReportWriters() {
@@ -1183,14 +1786,8 @@ public class SimulationEngine implements Runnable {
     private SummaryStats calculateSummaryStats() {
         SummaryStats stats = new SummaryStats();
         stats.totalStudents = allStudents.size();
-        stats.arrivedStudents = countStudentsNotInStatus(StudentStatus.ARRIVING);
-        stats.leftNormally = countStudentsInStatus(StudentStatus.LEFT_NORMAL);
-        stats.balkedStudents = countStudentsInStatus(StudentStatus.BALKED);
-        stats.leftNoSeatStudents = countStudentsInStatus(StudentStatus.LEFT_NO_SEAT);
-        stats.inSystemAtEnd = stats.totalStudents - stats.leftNormally - stats.balkedStudents - stats.leftNoSeatStudents - countStudentsInStatus(StudentStatus.ARRIVING);
-        stats.completionRate = stats.totalStudents == 0 ? 0.0 : stats.leftNormally * 100.0 / stats.totalStudents;
-        stats.balkRate = stats.totalStudents == 0 ? 0.0 : stats.balkedStudents * 100.0 / stats.totalStudents;
 
+        int arrivedStudents = 0, leftNormally = 0, balked = 0, leftNoSeat = 0, stillArriving = 0;
         long queueWaitSum = 0L;
         int queueWaitCount = 0;
         long seatWaitSum = 0L;
@@ -1199,6 +1796,13 @@ public class SimulationEngine implements Runnable {
         int stayTimeCount = 0;
 
         for (Student student : allStudents) {
+            StudentStatus s = student.getStatus();
+            if (s != StudentStatus.ARRIVING) arrivedStudents++;
+            else stillArriving++;
+            if (s == StudentStatus.LEFT_NORMAL) leftNormally++;
+            else if (s == StudentStatus.BALKED) balked++;
+            else if (s == StudentStatus.LEFT_NO_SEAT) leftNoSeat++;
+
             if (student.getServiceStartTime() >= 0 && student.getQueueEnterTime() >= 0) {
                 long queueWait = Math.max(0L, student.getServiceStartTime() - student.getQueueEnterTime());
                 queueWaitSum += queueWait;
@@ -1217,6 +1821,14 @@ public class SimulationEngine implements Runnable {
                 stayTimeCount++;
             }
         }
+
+        stats.arrivedStudents = arrivedStudents;
+        stats.leftNormally = leftNormally;
+        stats.balkedStudents = balked;
+        stats.leftNoSeatStudents = leftNoSeat;
+        stats.inSystemAtEnd = stats.totalStudents - leftNormally - balked - leftNoSeat - stillArriving;
+        stats.completionRate = stats.totalStudents == 0 ? 0.0 : leftNormally * 100.0 / stats.totalStudents;
+        stats.balkRate = stats.totalStudents == 0 ? 0.0 : balked * 100.0 / stats.totalStudents;
 
         stats.avgQueueWait = queueWaitCount == 0 ? 0.0 : queueWaitSum / (double) queueWaitCount;
         stats.avgSeatWait = seatWaitCount == 0 ? 0.0 : seatWaitSum / (double) seatWaitCount;
@@ -1594,6 +2206,56 @@ public class SimulationEngine implements Runnable {
             return remainingSeconds + " 秒";
         }
         return minutes + " 分 " + remainingSeconds + " 秒";
+    }
+
+    private static class DiningGroupCompletion {
+        private final int groupId;
+        private final long leaveTime;
+
+        private DiningGroupCompletion(int groupId, long leaveTime) {
+            this.groupId = groupId;
+            this.leaveTime = leaveTime;
+        }
+    }
+
+    private static class SeatWaitExpiration {
+        private final int groupId;
+        private final long expirationTime;
+
+        private SeatWaitExpiration(int groupId, long expirationTime) {
+            this.groupId = groupId;
+            this.expirationTime = expirationTime;
+        }
+    }
+
+    private static class RandomAccessIntSet {
+        private final List<Integer> values = new ArrayList<>();
+        private final Map<Integer, Integer> indexes = new HashMap<>();
+
+        private void add(int value) {
+            if (indexes.containsKey(value)) {
+                return;
+            }
+            indexes.put(value, values.size());
+            values.add(value);
+        }
+
+        private void remove(int value) {
+            Integer index = indexes.remove(value);
+            if (index == null) {
+                return;
+            }
+            int lastIndex = values.size() - 1;
+            int lastValue = values.remove(lastIndex);
+            if (index < lastIndex) {
+                values.set(index, lastValue);
+                indexes.put(lastValue, index);
+            }
+        }
+
+        private int getRandom(Random random) {
+            return values.isEmpty() ? -1 : values.get(random.nextInt(values.size()));
+        }
     }
 
     private static class Snapshot {

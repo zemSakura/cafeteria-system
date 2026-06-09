@@ -12,6 +12,7 @@ public class Student {
     // Data initialized by the arrival module.
     private int id;
     private int groupId;
+    private int groupSize = 1;
     private long arrivalTime;
     private int diningTime;
     private int preferredWindow;
@@ -86,6 +87,7 @@ public class Student {
 
     public int getId() { return id; }
     public int getGroupId() { return groupId; }
+    public int getGroupSize() { return groupSize; }
     public long getArrivalTime() { return arrivalTime; }
     public int getDiningTime() { return diningTime; }
     public int getPreferredWindow() { return preferredWindow; }
@@ -107,6 +109,7 @@ public class Student {
     public long getQueueLeaveTime() { return queueLeaveTime; }
 
     public void setStatus(StudentStatus status) { this.status = status; }
+    public void setGroupSize(int groupSize) { this.groupSize = Math.max(1, Math.min(4, groupSize)); }
     public void setFinalWindowId(int finalWindowId) { this.finalWindowId = finalWindowId; }
     public void setServiceStartTime(long serviceStartTime) { this.serviceStartTime = serviceStartTime; }
     public void setServiceEndTime(long serviceEndTime) { this.serviceEndTime = serviceEndTime; }
@@ -127,6 +130,26 @@ public class Student {
             return -1;
         }
         return serviceStartTime - arrivalTime;
+    }
+
+    public long getQueueWaitSeconds() {
+        if (queueEnterTime < 0) {
+            return 0L;
+        }
+        long end = serviceStartTime >= 0 ? serviceStartTime : queueLeaveTime;
+        return end < 0 ? 0L : Math.max(0L, end - queueEnterTime);
+    }
+
+    public long getSeatWaitSeconds() {
+        if (serviceEndTime < 0) {
+            return 0L;
+        }
+        long end = seatAssignedTime >= 0 ? seatAssignedTime : leaveTime;
+        return end < 0 ? 0L : Math.max(0L, end - serviceEndTime);
+    }
+
+    public long getTotalStaySeconds() {
+        return getSystemStayTime();
     }
 
     public long getSystemStayTime() {

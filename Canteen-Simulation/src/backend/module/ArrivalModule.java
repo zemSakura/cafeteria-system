@@ -30,7 +30,7 @@ import java.util.concurrent.BlockingQueue;
  * Responsibilities:
  * 1. Initialize static canteen windows.
  * 2. Generate exactly the requested number of students for each selected meal period.
- * 3. Allocate arrivals on the configured time range by a truncated Gaussian distribution.
+ * 3. Allocate arrivals on the configured time range by meal-specific peak distributions.
  *    The frontend openDuration is in minutes; generated arrivalTime is in seconds.
  * 4. Keep group sizes limited to 1, 2, 3 and 4.
  * 5. Provide visualization data for frontend charts.
@@ -151,10 +151,10 @@ public class ArrivalModule {
         SimulationMode mode = simulationMode == null ? SimulationMode.SINGLE_PERIOD : simulationMode;
         MealPeriod selectedPeriod = mealPeriod == null ? MealPeriod.LUNCH : mealPeriod;
 
-        Map<MealPeriod, Integer> populations = deriveMealPopulations(totalPopulation);
         List<MealPeriod> periods = resolvePeriods(mode, selectedPeriod);
+        Map<MealPeriod, Integer> populations = deriveMealPopulations(totalPopulation, mode, selectedPeriod);
 
-        List<Student> students = new ArrayList<>(Math.max(1, totalPopulation * periods.size()));
+        List<Student> students = new ArrayList<>(Math.max(1, totalPopulation));
         Map<MealPeriod, MealArrivalStats> mealStats = new LinkedHashMap<>();
         List<ArrivalGenerationResult.PhaseBoundary> phaseBoundaries = new ArrayList<>();
 
@@ -226,16 +226,53 @@ public class ArrivalModule {
     }
 
     /**
-     * The frontend input is now treated as the exact number of students in each
-     * selected meal period. For a single-period simulation, entering breakfast
-     * 1000 will generate exactly 1000 breakfast students. For full-day mode,
-     * the same value is used for breakfast, lunch and dinner respectively.
+     * Full-day optimization treats totalPopulation as the daily total and splits
+     * it across breakfast/lunch/dinner by the configured advanced ratios.
+     * Single-period replay still treats totalPopulation as that period's count.
      */
     public Map<MealPeriod, Integer> deriveMealPopulations(int totalPopulation) {
+        return deriveMealPopulations(totalPopulation, CanteenConfig.SIMULATION_MODE, CanteenConfig.MEAL_PERIOD);
+    }
+
+    public Map<MealPeriod, Integer> deriveMealPopulations(int totalPopulation,
+                                                          SimulationMode simulationMode,
+                                                          MealPeriod selectedPeriod) {
         Map<MealPeriod, Integer> result = new LinkedHashMap<>();
-        result.put(MealPeriod.BREAKFAST, totalPopulation);
-        result.put(MealPeriod.LUNCH, totalPopulation);
-        result.put(MealPeriod.DINNER, totalPopulation);
+        result.put(MealPeriod.BREAKFAST, 0);
+        result.put(MealPeriod.LUNCH, 0);
+        result.put(MealPeriod.DINNER, 0);
+
+        if (simulationMode != SimulationMode.FULL_DAY) {
+            result.put(selectedPeriod == null ? MealPeriod.LUNCH : selectedPeriod, totalPopulation);
+            return result;
+        }
+
+        double breakfastRatio = Math.max(0.0, CanteenConfig.BREAKFAST_POPULATION_RATIO);
+        double lunchRatio = Math.max(0.0, CanteenConfig.LUNCH_POPULATION_RATIO);
+        double dinnerRatio = Math.max(0.0, CanteenConfig.DINNER_POPULATION_RATIO);
+        double sum = breakfastRatio + lunchRatio + dinnerRatio;
+        if (sum <= 0.0) {
+            breakfastRatio = CanteenConfig.DEFAULT_BREAKFAST_POPULATION_RATIO;
+            lunchRatio = CanteenConfig.DEFAULT_LUNCH_POPULATION_RATIO;
+            dinnerRatio = CanteenConfig.DEFAULT_DINNER_POPULATION_RATIO;
+            sum = breakfastRatio + lunchRatio + dinnerRatio;
+        }
+
+        int breakfastPopulation = (int) Math.round(totalPopulation * breakfastRatio / sum);
+        int dinnerPopulation = (int) Math.round(totalPopulation * dinnerRatio / sum);
+        int lunchPopulation = totalPopulation - breakfastPopulation - dinnerPopulation;
+        if (lunchPopulation < 0) {
+            lunchPopulation = 0;
+        }
+
+        int allocated = breakfastPopulation + lunchPopulation + dinnerPopulation;
+        if (allocated != totalPopulation) {
+            lunchPopulation += totalPopulation - allocated;
+        }
+
+        result.put(MealPeriod.BREAKFAST, Math.max(0, breakfastPopulation));
+        result.put(MealPeriod.LUNCH, Math.max(0, lunchPopulation));
+        result.put(MealPeriod.DINNER, Math.max(0, dinnerPopulation));
         return result;
     }
 
@@ -309,9 +346,6 @@ public class ArrivalModule {
                                                     int simulationBaseSecond,
                                                     int[] counters) {
         int configuredDurationSecond = getConfiguredDurationSeconds();
-        double meanSecond = (configuredDurationSecond - 1) / 2.0;
-        double sigmaSeconds = Math.max(1.0, configuredDurationSecond / 6.0);
-
         List<ArrivalPeak> peaks = createPeaks(period, population);
         List<ArrivalDistributionPoint> distributionPoints = createDistributionPoints(
                 period,
@@ -321,16 +355,25 @@ public class ArrivalModule {
         );
 
         List<Integer> groupSizes = generateGroupSizes(population);
+        List<ArrivalCandidate> arrivalCandidates = generateArrivalCandidates(
+                period,
+                groupSizes.size(),
+                createPeaks(period, groupSizes.size())
+        );
         List<Student> students = new ArrayList<>(Math.max(1, population));
 
-        for (Integer groupSize : groupSizes) {
+        for (int index = 0; index < groupSizes.size(); index++) {
+            Integer groupSize = groupSizes.get(index);
+            ArrivalCandidate candidate = arrivalCandidates.get(index);
             int groupId = counters[1]++;
-            CrowdType groupCrowdType = determineCrowdType();
-            int groupSecond = sampleTruncatedGaussianSecond(0, configuredDurationSecond - 1, meanSecond, sigmaSeconds);
+            CrowdType groupCrowdType = candidate.crowdType;
+            int groupSecond = minuteOfDayToPeriodSecond(period, candidate.minuteOfDay)
+                    + random.nextInt(60);
+            groupSecond = clamp(groupSecond, 0, configuredDurationSecond - 1);
             long groupArrivalTime = simulationBaseSecond + groupSecond;
 
             for (int i = 0; i < groupSize; i++) {
-                students.add(new Student(
+                Student student = new Student(
                         counters[0]++,
                         groupId,
                         groupArrivalTime,
@@ -339,8 +382,10 @@ public class ArrivalModule {
                         generatePatience(groupCrowdType),
                         period,
                         groupCrowdType,
-                        "normal_distribution"
-                ));
+                        candidate.source
+                );
+                student.setGroupSize(groupSize);
+                students.add(student);
             }
         }
 
@@ -363,17 +408,51 @@ public class ArrivalModule {
     private List<ArrivalPeak> createPeaks(MealPeriod period, int peakPopulation) {
         int configuredStartMinute = period.getStartMinute();
         int configuredEndMinute = getConfiguredEndMinute(period);
-        double meanMinute = (configuredStartMinute + configuredEndMinute) / 2.0;
-        double sigmaMinutes = Math.max(1.0, getConfiguredDurationMinutes() / 6.0);
 
         List<ArrivalPeak> peaks = new ArrayList<>();
+        if (period == MealPeriod.LUNCH
+                && CanteenConfig.LUNCH_RELEASE_TIMES != null
+                && CanteenConfig.LUNCH_RELEASE_TIMES.length > 0) {
+            double totalWeight = positiveSum(CanteenConfig.LUNCH_BATCH_WEIGHTS);
+            for (int i = 0; i < CanteenConfig.LUNCH_RELEASE_TIMES.length; i++) {
+                double weight = weightAt(CanteenConfig.LUNCH_BATCH_WEIGHTS, i, totalWeight);
+                int releaseMinute = clamp(CanteenConfig.LUNCH_RELEASE_TIMES[i],
+                        configuredStartMinute,
+                        configuredEndMinute);
+                double sigmaMinutes = Math.max(3.0, valueAt(CanteenConfig.LUNCH_PEAK_DELAY_MEANS, i, 8));
+                peaks.add(createPeak(
+                        period.getCode() + "-batch-" + (i + 1),
+                        period,
+                        releaseMinute,
+                        sigmaMinutes,
+                        peakPopulation * weight,
+                        "lunch_batch_" + (i + 1)
+                ));
+            }
+            return peaks;
+        }
+
+        if (period == MealPeriod.DINNER) {
+            peaks.add(createPeak(
+                    period.getCode() + "-class-release",
+                    period,
+                    clamp(CanteenConfig.DINNER_UNIFIED_RELEASE_TIME, configuredStartMinute, configuredEndMinute),
+                    Math.max(3.0, CanteenConfig.DINNER_PEAK_DELAY_MEAN),
+                    peakPopulation,
+                    "dinner_class_release"
+            ));
+            return peaks;
+        }
+
+        double meanMinute = configuredStartMinute + getConfiguredDurationMinutes() * 0.35;
+        double sigmaMinutes = Math.max(5.0, getConfiguredDurationMinutes() / 8.0);
         peaks.add(createPeak(
-                period.getCode() + "-normal-arrival",
+                period.getCode() + "-morning-peak",
                 period,
-                (int) Math.round(meanMinute),
+                clamp((int) Math.round(meanMinute), configuredStartMinute, configuredEndMinute),
                 sigmaMinutes,
                 peakPopulation,
-                "normal_distribution"
+                period.getCode() + "_peak"
         ));
         return peaks;
     }
@@ -432,6 +511,30 @@ public class ArrivalModule {
         }
     }
 
+    private List<ArrivalCandidate> generateArrivalCandidates(MealPeriod period,
+                                                             int groupCount,
+                                                             List<ArrivalPeak> peaks) {
+        List<ArrivalCandidate> candidates = new ArrayList<>(Math.max(1, groupCount));
+        if (groupCount <= 0) {
+            return candidates;
+        }
+
+        int backgroundCount = (int) Math.round(groupCount * Math.max(0.0, CanteenConfig.BACKGROUND_FLOW_RATIO));
+        backgroundCount = clamp(backgroundCount, 0, groupCount);
+        int peakCount = groupCount - backgroundCount;
+
+        addBackgroundCandidates(candidates, period, backgroundCount);
+        addPeakCandidates(candidates, period, peakCount, peaks);
+        while (candidates.size() < groupCount) {
+            addPeakCandidates(candidates, period, 1, peaks);
+        }
+        if (candidates.size() > groupCount) {
+            candidates = new ArrayList<>(candidates.subList(0, groupCount));
+        }
+        Collections.shuffle(candidates, random);
+        return candidates;
+    }
+
     private void addPeakCandidates(List<ArrivalCandidate> candidates,
                                    MealPeriod period,
                                    int totalPeakPopulation,
@@ -462,6 +565,36 @@ public class ArrivalModule {
             }
             created += count;
         }
+    }
+
+    private int minuteOfDayToPeriodSecond(MealPeriod period, int minuteOfDay) {
+        return Math.max(0, minuteOfDay - period.getStartMinute()) * 60;
+    }
+
+    private double positiveSum(double[] values) {
+        if (values == null || values.length == 0) {
+            return 0.0;
+        }
+        double sum = 0.0;
+        for (double value : values) {
+            sum += Math.max(0.0, value);
+        }
+        return sum;
+    }
+
+    private double weightAt(double[] values, int index, double totalWeight) {
+        if (values == null || values.length == 0 || totalWeight <= 0.0) {
+            return 1.0;
+        }
+        int clampedIndex = Math.min(index, values.length - 1);
+        return Math.max(0.0, values[clampedIndex]) / totalWeight;
+    }
+
+    private int valueAt(int[] values, int index, int fallback) {
+        if (values == null || values.length == 0) {
+            return fallback;
+        }
+        return values[Math.min(index, values.length - 1)];
     }
 
     private List<Integer> generateGroupSizes(int population) {
@@ -599,7 +732,9 @@ public class ArrivalModule {
     }
 
     private int generatePreferredWindow() {
-        return random.nextInt(CanteenConfig.getWindowCount());
+        // Keep demand generation independent of the candidate window count.
+        // The engine maps this stable affinity token into the available windows.
+        return random.nextInt();
     }
 
     private int generatePatience(CrowdType crowdType) {

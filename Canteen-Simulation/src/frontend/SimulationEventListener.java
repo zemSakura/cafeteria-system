@@ -1,5 +1,7 @@
 package frontend;
 
+import backend.dto.SimulationSnapshot;
+
 /**
  * 仿真系统事件监听器
  */
@@ -52,6 +54,13 @@ public interface SimulationEventListener {
 
     /** 餐段切换通知（早餐/午餐/晚餐/关闭中） */
     void onPhaseChanged(String phaseName, String phaseLabel, long currentTime);
+
+    /**
+     * Aggregated backend snapshot for KPI cards, pressure colors and trends.
+     * Default implementation keeps existing listeners source-compatible.
+     */
+    default void onSnapshot(SimulationSnapshot snapshot) {
+    }
 
     void onSimulationFinished();
 }

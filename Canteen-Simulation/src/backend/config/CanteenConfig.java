@@ -72,8 +72,17 @@ public class CanteenConfig {
     public static final double DEFAULT_PROB_TEAM = 0.1;
 
     public static final int DEFAULT_TOTAL_POPULATION = 1000;
-    public static final SimulationMode DEFAULT_SIMULATION_MODE = SimulationMode.SINGLE_PERIOD;
+    public static final SimulationMode DEFAULT_SIMULATION_MODE = SimulationMode.FULL_DAY;
     public static final MealPeriod DEFAULT_MEAL_PERIOD = MealPeriod.LUNCH;
+
+    public static final double DEFAULT_BREAKFAST_POPULATION_RATIO = 0.25;
+    public static final double DEFAULT_LUNCH_POPULATION_RATIO = 0.45;
+    public static final double DEFAULT_DINNER_POPULATION_RATIO = 0.30;
+
+    public static final double DEFAULT_AVG_MEAL_PRICE = 15.0;
+    public static final double DEFAULT_WINDOW_COST_PER_HOUR = 35.0;
+    public static final double DEFAULT_TABLE_COST = 0.5;
+    public static final double DEFAULT_LOST_STUDENT_PENALTY = 12.0;
 
     public static final double DEFAULT_BREAKFAST_BASE_RATE = 0.22;
     public static final double DEFAULT_EARLY_CLASS_RATIO = 0.35;
@@ -129,6 +138,16 @@ public class CanteenConfig {
     public static int TOTAL_POPULATION = DEFAULT_TOTAL_POPULATION;
     public static SimulationMode SIMULATION_MODE = DEFAULT_SIMULATION_MODE;
     public static MealPeriod MEAL_PERIOD = DEFAULT_MEAL_PERIOD;
+
+    public static double BREAKFAST_POPULATION_RATIO = DEFAULT_BREAKFAST_POPULATION_RATIO;
+    public static double LUNCH_POPULATION_RATIO = DEFAULT_LUNCH_POPULATION_RATIO;
+    public static double DINNER_POPULATION_RATIO = DEFAULT_DINNER_POPULATION_RATIO;
+
+    /** Economic inputs used by both live KPI snapshots and optimization. */
+    public static double AVG_MEAL_PRICE = DEFAULT_AVG_MEAL_PRICE;
+    public static double WINDOW_COST_PER_HOUR = DEFAULT_WINDOW_COST_PER_HOUR;
+    public static double TABLE_COST = DEFAULT_TABLE_COST;
+    public static double LOST_STUDENT_PENALTY = DEFAULT_LOST_STUDENT_PENALTY;
 
     public static double BREAKFAST_BASE_RATE = DEFAULT_BREAKFAST_BASE_RATE;
     public static double EARLY_CLASS_RATIO = DEFAULT_EARLY_CLASS_RATIO;
@@ -254,10 +273,54 @@ public class CanteenConfig {
                 ? DEFAULT_WINDOW_AVG_SERVE_TIME
                 : lockedServeTimes;
         int[] result = new int[windowCount];
-        for (int i = 0; i < windowCount; i++) {
-            result[i] = Math.max(1, source[i % source.length]);
+        int copied = Math.min(source.length, windowCount);
+        for (int i = 0; i < copied; i++) {
+            result[i] = Math.max(1, source[i]);
+        }
+
+        if (copied < windowCount) {
+            fillGeneratedServeTimes(result, copied, windowCount);
         }
         return result;
+    }
+
+    private static void fillGeneratedServeTimes(int[] result, int startIndex, int windowCount) {
+        int targetSlowCount = estimateSlowWindowCount(windowCount);
+        int currentSlowCount = countSlowServeTimes(result, startIndex);
+        int remaining = windowCount - startIndex;
+        int slowToAdd = Math.max(0, Math.min(remaining, targetSlowCount - currentSlowCount));
+        int fastToAdd = remaining - slowToAdd;
+
+        Random random = new Random(RANDOM_SEED + windowCount * 131L + 17L + startIndex * 43L);
+        List<Integer> additions = new ArrayList<>();
+        for (int i = 0; i < fastToAdd; i++) {
+            additions.add(randomBetweenInclusive(random, 15, 25));
+        }
+        for (int i = 0; i < slowToAdd; i++) {
+            additions.add(randomBetweenInclusive(random, 60, 120));
+        }
+        Collections.shuffle(additions, random);
+
+        for (int i = 0; i < additions.size(); i++) {
+            result[startIndex + i] = additions.get(i);
+        }
+    }
+
+    private static int estimateSlowWindowCount(int windowCount) {
+        if (windowCount <= 1) {
+            return 0;
+        }
+        return Math.max(1, (int) Math.round(windowCount / 3.0));
+    }
+
+    private static int countSlowServeTimes(int[] serveTimes, int length) {
+        int count = 0;
+        for (int i = 0; i < length && i < serveTimes.length; i++) {
+            if (serveTimes[i] >= 45) {
+                count++;
+            }
+        }
+        return count;
     }
 
     public static synchronized void updateWindowConfigs(int[] distances, int[] serveTimes) {
@@ -303,6 +366,13 @@ public class CanteenConfig {
         TOTAL_POPULATION = request.getTotalPopulation();
         SIMULATION_MODE = SimulationMode.fromCode(request.getSimulationMode());
         MEAL_PERIOD = MealPeriod.fromCode(request.getMealPeriod());
+        BREAKFAST_POPULATION_RATIO = request.getBreakfastPopulationRatio();
+        LUNCH_POPULATION_RATIO = request.getLunchPopulationRatio();
+        DINNER_POPULATION_RATIO = request.getDinnerPopulationRatio();
+        AVG_MEAL_PRICE = request.getAvgMealPrice();
+        WINDOW_COST_PER_HOUR = request.getWindowCostPerHour();
+        TABLE_COST = request.getTableCost();
+        LOST_STUDENT_PENALTY = request.getLostStudentPenalty();
 
         if (request.getWindowDistances() != null && request.getWindowAvgServeTime() != null) {
             updateWindowConfigs(request.getWindowDistances(), request.getWindowAvgServeTime());
@@ -344,6 +414,13 @@ public class CanteenConfig {
         TOTAL_POPULATION = DEFAULT_TOTAL_POPULATION;
         SIMULATION_MODE = DEFAULT_SIMULATION_MODE;
         MEAL_PERIOD = DEFAULT_MEAL_PERIOD;
+        BREAKFAST_POPULATION_RATIO = DEFAULT_BREAKFAST_POPULATION_RATIO;
+        LUNCH_POPULATION_RATIO = DEFAULT_LUNCH_POPULATION_RATIO;
+        DINNER_POPULATION_RATIO = DEFAULT_DINNER_POPULATION_RATIO;
+        AVG_MEAL_PRICE = DEFAULT_AVG_MEAL_PRICE;
+        WINDOW_COST_PER_HOUR = DEFAULT_WINDOW_COST_PER_HOUR;
+        TABLE_COST = DEFAULT_TABLE_COST;
+        LOST_STUDENT_PENALTY = DEFAULT_LOST_STUDENT_PENALTY;
 
         BREAKFAST_BASE_RATE = DEFAULT_BREAKFAST_BASE_RATE;
         EARLY_CLASS_RATIO = DEFAULT_EARLY_CLASS_RATIO;
@@ -415,6 +492,10 @@ public class CanteenConfig {
         if (TOTAL_POPULATION <= 0) {
             throw new IllegalArgumentException("totalPopulation must be greater than 0");
         }
+        if (AVG_MEAL_PRICE < 0.0 || WINDOW_COST_PER_HOUR < 0.0 || TABLE_COST < 0.0 || LOST_STUDENT_PENALTY < 0.0) {
+            throw new IllegalArgumentException("economic parameters cannot be negative");
+        }
+        normalizeMealPopulationRatios();
         validateRate(BREAKFAST_BASE_RATE, "breakfastBaseRate");
         validateRate(EARLY_CLASS_RATIO, "earlyClassRatio");
         validateRate(BREAKFAST_SKIP_RATE, "breakfastSkipRate");
@@ -471,6 +552,29 @@ public class CanteenConfig {
         PROB_TEAM /= sum;
     }
 
+    public static double getEffectiveOpenHours() {
+        double periodHours = Math.max(0.0, OPEN_DURATION / 60.0);
+        return SIMULATION_MODE == SimulationMode.FULL_DAY ? periodHours * 3.0 : periodHours;
+    }
+
+    private static void normalizeMealPopulationRatios() {
+        if (BREAKFAST_POPULATION_RATIO < 0.0
+                || LUNCH_POPULATION_RATIO < 0.0
+                || DINNER_POPULATION_RATIO < 0.0) {
+            throw new IllegalArgumentException("meal population ratios cannot be negative");
+        }
+        double sum = BREAKFAST_POPULATION_RATIO + LUNCH_POPULATION_RATIO + DINNER_POPULATION_RATIO;
+        if (sum <= 0.0) {
+            BREAKFAST_POPULATION_RATIO = DEFAULT_BREAKFAST_POPULATION_RATIO;
+            LUNCH_POPULATION_RATIO = DEFAULT_LUNCH_POPULATION_RATIO;
+            DINNER_POPULATION_RATIO = DEFAULT_DINNER_POPULATION_RATIO;
+            return;
+        }
+        BREAKFAST_POPULATION_RATIO /= sum;
+        LUNCH_POPULATION_RATIO /= sum;
+        DINNER_POPULATION_RATIO /= sum;
+    }
+
     /** Added for backend auto-optimization: capture all static runtime config before a headless run. */
     public static synchronized CanteenConfigSnapshot snapshot() {
         CanteenConfigSnapshot snapshot = new CanteenConfigSnapshot();
@@ -498,6 +602,13 @@ public class CanteenConfig {
         snapshot.totalPopulation = TOTAL_POPULATION;
         snapshot.simulationMode = SIMULATION_MODE;
         snapshot.mealPeriod = MEAL_PERIOD;
+        snapshot.breakfastPopulationRatio = BREAKFAST_POPULATION_RATIO;
+        snapshot.lunchPopulationRatio = LUNCH_POPULATION_RATIO;
+        snapshot.dinnerPopulationRatio = DINNER_POPULATION_RATIO;
+        snapshot.avgMealPrice = AVG_MEAL_PRICE;
+        snapshot.windowCostPerHour = WINDOW_COST_PER_HOUR;
+        snapshot.tableCost = TABLE_COST;
+        snapshot.lostStudentPenalty = LOST_STUDENT_PENALTY;
         snapshot.breakfastBaseRate = BREAKFAST_BASE_RATE;
         snapshot.earlyClassRatio = EARLY_CLASS_RATIO;
         snapshot.breakfastSkipRate = BREAKFAST_SKIP_RATE;
@@ -545,6 +656,13 @@ public class CanteenConfig {
         TOTAL_POPULATION = snapshot.totalPopulation;
         SIMULATION_MODE = snapshot.simulationMode;
         MEAL_PERIOD = snapshot.mealPeriod;
+        BREAKFAST_POPULATION_RATIO = snapshot.breakfastPopulationRatio;
+        LUNCH_POPULATION_RATIO = snapshot.lunchPopulationRatio;
+        DINNER_POPULATION_RATIO = snapshot.dinnerPopulationRatio;
+        AVG_MEAL_PRICE = snapshot.avgMealPrice;
+        WINDOW_COST_PER_HOUR = snapshot.windowCostPerHour;
+        TABLE_COST = snapshot.tableCost;
+        LOST_STUDENT_PENALTY = snapshot.lostStudentPenalty;
         BREAKFAST_BASE_RATE = snapshot.breakfastBaseRate;
         EARLY_CLASS_RATIO = snapshot.earlyClassRatio;
         BREAKFAST_SKIP_RATE = snapshot.breakfastSkipRate;
@@ -584,6 +702,13 @@ public class CanteenConfig {
                 ", TOTAL_POPULATION=" + TOTAL_POPULATION +
                 ", SIMULATION_MODE=" + SIMULATION_MODE +
                 ", MEAL_PERIOD=" + MEAL_PERIOD +
+                ", BREAKFAST_POPULATION_RATIO=" + BREAKFAST_POPULATION_RATIO +
+                ", LUNCH_POPULATION_RATIO=" + LUNCH_POPULATION_RATIO +
+                ", DINNER_POPULATION_RATIO=" + DINNER_POPULATION_RATIO +
+                ", AVG_MEAL_PRICE=" + AVG_MEAL_PRICE +
+                ", WINDOW_COST_PER_HOUR=" + WINDOW_COST_PER_HOUR +
+                ", TABLE_COST=" + TABLE_COST +
+                ", LOST_STUDENT_PENALTY=" + LOST_STUDENT_PENALTY +
                 '}';
     }
 
@@ -612,6 +737,13 @@ public class CanteenConfig {
         private int totalPopulation;
         private SimulationMode simulationMode;
         private MealPeriod mealPeriod;
+        private double breakfastPopulationRatio;
+        private double lunchPopulationRatio;
+        private double dinnerPopulationRatio;
+        private double avgMealPrice;
+        private double windowCostPerHour;
+        private double tableCost;
+        private double lostStudentPenalty;
         private double breakfastBaseRate;
         private double earlyClassRatio;
         private double breakfastSkipRate;

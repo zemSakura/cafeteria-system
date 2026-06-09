@@ -14,6 +14,16 @@ public class StatisticsResult {
     private double avgWaitTime;
     private double avgWaitTimeSeconds;
     private double avgWaitTimeMinutes;
+    private double p95WaitTimeSeconds;
+    private double p95WaitTimeMinutes;
+    private double avgSeatWaitTimeSeconds;
+    private double avgSeatWaitTimeMinutes;
+    private double p95SeatWaitTimeSeconds;
+    private double p95SeatWaitTimeMinutes;
+    private double avgTotalStayTimeSeconds;
+    private double avgTotalStayTimeMinutes;
+    private double p95TotalStayTimeSeconds;
+    private double p95TotalStayTimeMinutes;
     private double windowUtilization;
     private double tableUtilization;
     private int peakQueueLength;
@@ -23,6 +33,12 @@ public class StatisticsResult {
     private double finishRate;
     private double abandonRate;
     private int balkedCount;
+    private int maxWaitingSeatCount;
+    private double grossRevenue;
+    private double windowCost;
+    private double tableCost;
+    private double lostOpportunityCost;
+    private double netProfit;
     private long runtimeMs;
 
     public double getAvgWaitTime() { return avgWaitTime; }
@@ -66,14 +82,71 @@ public class StatisticsResult {
     public double getAvgWaitTimeMinutes() { return avgWaitTimeMinutes; }
     public void setAvgWaitTimeMinutes(double avgWaitTimeMinutes) { this.avgWaitTimeMinutes = avgWaitTimeMinutes; }
 
+    public double getP95WaitTimeSeconds() { return p95WaitTimeSeconds; }
+    public void setP95WaitTimeSeconds(double p95WaitTimeSeconds) {
+        this.p95WaitTimeSeconds = p95WaitTimeSeconds;
+        this.p95WaitTimeMinutes = p95WaitTimeSeconds / 60.0;
+    }
+
+    public double getP95WaitTimeMinutes() { return p95WaitTimeMinutes; }
+    public void setP95WaitTimeMinutes(double p95WaitTimeMinutes) {
+        this.p95WaitTimeMinutes = p95WaitTimeMinutes;
+        this.p95WaitTimeSeconds = p95WaitTimeMinutes * 60.0;
+    }
+
+    public double getAvgSeatWaitTimeSeconds() { return avgSeatWaitTimeSeconds; }
+    public void setAvgSeatWaitTimeSeconds(double value) {
+        this.avgSeatWaitTimeSeconds = value;
+        this.avgSeatWaitTimeMinutes = value / 60.0;
+    }
+
+    public double getAvgSeatWaitTimeMinutes() { return avgSeatWaitTimeMinutes; }
+    public void setAvgSeatWaitTimeMinutes(double value) {
+        this.avgSeatWaitTimeMinutes = value;
+        this.avgSeatWaitTimeSeconds = value * 60.0;
+    }
+
+    public double getP95SeatWaitTimeSeconds() { return p95SeatWaitTimeSeconds; }
+    public void setP95SeatWaitTimeSeconds(double value) {
+        this.p95SeatWaitTimeSeconds = value;
+        this.p95SeatWaitTimeMinutes = value / 60.0;
+    }
+
+    public double getP95SeatWaitTimeMinutes() { return p95SeatWaitTimeMinutes; }
+    public void setP95SeatWaitTimeMinutes(double value) {
+        this.p95SeatWaitTimeMinutes = value;
+        this.p95SeatWaitTimeSeconds = value * 60.0;
+    }
+
+    public double getAvgTotalStayTimeSeconds() { return avgTotalStayTimeSeconds; }
+    public void setAvgTotalStayTimeSeconds(double value) {
+        this.avgTotalStayTimeSeconds = value;
+        this.avgTotalStayTimeMinutes = value / 60.0;
+    }
+
+    public double getAvgTotalStayTimeMinutes() { return avgTotalStayTimeMinutes; }
+    public void setAvgTotalStayTimeMinutes(double value) {
+        this.avgTotalStayTimeMinutes = value;
+        this.avgTotalStayTimeSeconds = value * 60.0;
+    }
+
+    public double getP95TotalStayTimeSeconds() { return p95TotalStayTimeSeconds; }
+    public void setP95TotalStayTimeSeconds(double value) {
+        this.p95TotalStayTimeSeconds = value;
+        this.p95TotalStayTimeMinutes = value / 60.0;
+    }
+
+    public double getP95TotalStayTimeMinutes() { return p95TotalStayTimeMinutes; }
+    public void setP95TotalStayTimeMinutes(double value) {
+        this.p95TotalStayTimeMinutes = value;
+        this.p95TotalStayTimeSeconds = value * 60.0;
+    }
+
     public double getWindowUtilization() { return windowUtilization; }
     public void setWindowUtilization(double windowUtilization) { this.windowUtilization = windowUtilization; }
 
     public double getTableUtilization() { return tableUtilization; }
-    public void setTableUtilization(double tableUtilization) {
-        this.tableUtilization = tableUtilization;
-        this.seatUtilization = tableUtilization;
-    }
+    public void setTableUtilization(double tableUtilization) { this.tableUtilization = tableUtilization; }
 
     public int getPeakQueueLength() { return peakQueueLength; }
     public void setPeakQueueLength(int peakQueueLength) {
@@ -91,10 +164,7 @@ public class StatisticsResult {
     public void setAvgQueueLength(double avgQueueLength) { this.avgQueueLength = avgQueueLength; }
 
     public double getSeatUtilization() { return seatUtilization; }
-    public void setSeatUtilization(double seatUtilization) {
-        this.seatUtilization = seatUtilization;
-        this.tableUtilization = seatUtilization;
-    }
+    public void setSeatUtilization(double seatUtilization) { this.seatUtilization = seatUtilization; }
 
     public double getFinishRate() { return finishRate; }
     public void setFinishRate(double finishRate) { this.finishRate = finishRate; }
@@ -108,6 +178,24 @@ public class StatisticsResult {
         this.abandonedStudents = balkedCount;
     }
 
+    public int getMaxWaitingSeatCount() { return maxWaitingSeatCount; }
+    public void setMaxWaitingSeatCount(int maxWaitingSeatCount) { this.maxWaitingSeatCount = maxWaitingSeatCount; }
+
+    public double getGrossRevenue() { return grossRevenue; }
+    public void setGrossRevenue(double grossRevenue) { this.grossRevenue = grossRevenue; }
+
+    public double getWindowCost() { return windowCost; }
+    public void setWindowCost(double windowCost) { this.windowCost = windowCost; }
+
+    public double getTableCost() { return tableCost; }
+    public void setTableCost(double tableCost) { this.tableCost = tableCost; }
+
+    public double getLostOpportunityCost() { return lostOpportunityCost; }
+    public void setLostOpportunityCost(double lostOpportunityCost) { this.lostOpportunityCost = lostOpportunityCost; }
+
+    public double getNetProfit() { return netProfit; }
+    public void setNetProfit(double netProfit) { this.netProfit = netProfit; }
+
     public long getRuntimeMs() { return runtimeMs; }
     public void setRuntimeMs(long runtimeMs) { this.runtimeMs = runtimeMs; }
 
@@ -116,6 +204,7 @@ public class StatisticsResult {
         return "StatisticsResult{" +
                 "avgWaitTime=" + avgWaitTime +
                 ", avgWaitTimeMinutes=" + avgWaitTimeMinutes +
+                ", p95WaitTimeMinutes=" + p95WaitTimeMinutes +
                 ", windowUtilization=" + windowUtilization +
                 ", tableUtilization=" + tableUtilization +
                 ", peakQueueLength=" + peakQueueLength +

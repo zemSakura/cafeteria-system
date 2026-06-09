@@ -13,10 +13,13 @@ public class ReplaySnapshot {
     public int totalSeats;
     public int emptySeats;
     public int diningStudents;
+    public int waitingSeatStudents;
     public int arrivedStudents;
     public int servedStudents;
     public int finishedStudents;
     public int abandonedStudents;
+    public double windowUtilization;
+    public double tableUtilization;
 
     public ReplaySnapshot copy() {
         ReplaySnapshot s = new ReplaySnapshot();
@@ -32,10 +35,13 @@ public class ReplaySnapshot {
         s.totalSeats = this.totalSeats;
         s.emptySeats = this.emptySeats;
         s.diningStudents = this.diningStudents;
+        s.waitingSeatStudents = this.waitingSeatStudents;
         s.arrivedStudents = this.arrivedStudents;
         s.servedStudents = this.servedStudents;
         s.finishedStudents = this.finishedStudents;
         s.abandonedStudents = this.abandonedStudents;
+        s.windowUtilization = this.windowUtilization;
+        s.tableUtilization = this.tableUtilization;
         return s;
     }
 }

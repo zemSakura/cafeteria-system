@@ -19,8 +19,11 @@ public class SimulationConfigDialog extends JDialog {
     private JTextField durationField;
     private JTextField windowCountField;
     private JTextField probSoloField;
-    private JTextField seedField;
     private JTextField studentsField;
+    private JTextField avgMealPriceField;
+    private JTextField windowCostField;
+    private JTextField tableCostField;
+    private JTextField lostPenaltyField;
 
     // 状态与数据
     private boolean isConfirmed = false;
@@ -33,7 +36,7 @@ public class SimulationConfigDialog extends JDialog {
     public SimulationConfigDialog(Frame parent, SimulationConfigDTO presetDto) {
         // 设置为模态弹窗（不关掉它，就不能点后面的主界面）
         super(parent, "仿真参数初始化配置", true);
-        setSize(430, 430);
+        setSize(520, 620);
         setLocationRelativeTo(parent); // 居中显示
         setLayout(new BorderLayout(10, 10));
 
@@ -45,10 +48,13 @@ public class SimulationConfigDialog extends JDialog {
         durationField = new JTextField(String.valueOf(defaultDto.openDuration));
         windowCountField = new JTextField(String.valueOf(defaultDto.windowCount));
         probSoloField = new JTextField(String.valueOf(defaultDto.probSolo));
-        seedField = new JTextField(String.valueOf(defaultDto.randomSeed));
+        avgMealPriceField = new JTextField(String.valueOf(defaultDto.avgMealPrice));
+        windowCostField = new JTextField(String.valueOf(defaultDto.windowCostPerHour));
+        tableCostField = new JTextField(String.valueOf(defaultDto.tableCost));
+        lostPenaltyField = new JTextField(String.valueOf(defaultDto.lostStudentPenalty));
 
         // 2. 组装表单面板 (使用 GridLayout 两列排布)
-        JPanel formPanel = new JPanel(new GridLayout(8, 2, 10, 15));
+        JPanel formPanel = new JPanel(new GridLayout(11, 2, 10, 12));
         formPanel.setBorder(BorderFactory.createEmptyBorder(20, 30, 20, 30));
 
         formPanel.add(new JLabel(buildTableLabel()));
@@ -67,8 +73,17 @@ public class SimulationConfigDialog extends JDialog {
         formPanel.add(new JLabel("单人就餐概率 (0.0-1.0):"));
         formPanel.add(probSoloField);
 
-        formPanel.add(new JLabel("随机种子 (用于复现):"));
-        formPanel.add(seedField);
+        formPanel.add(new JLabel("平均客单价 (元):"));
+        formPanel.add(avgMealPriceField);
+
+        formPanel.add(new JLabel("窗口运营成本 (元/小时):"));
+        formPanel.add(windowCostField);
+
+        formPanel.add(new JLabel("餐桌成本 (元/张):"));
+        formPanel.add(tableCostField);
+
+        formPanel.add(new JLabel("放弃学生损失 (元/人):"));
+        formPanel.add(lostPenaltyField);
 
         // 【新增】：模拟模式下拉框
         formPanel.add(new JLabel("模拟模式:"));
@@ -146,7 +161,10 @@ public class SimulationConfigDialog extends JDialog {
                     studentsField.setText(extractJsonValue(content, "totalStudents"));
                     windowCountField.setText(extractJsonValue(content, "windowCount"));
                     probSoloField.setText(extractJsonValue(content, "probSolo"));
-                    seedField.setText(extractJsonValue(content, "randomSeed"));
+                    avgMealPriceField.setText(extractJsonValue(content, "avgMealPrice"));
+                    windowCostField.setText(extractJsonValue(content, "windowCostPerHour"));
+                    tableCostField.setText(extractJsonValue(content, "tableCost"));
+                    lostPenaltyField.setText(extractJsonValue(content, "lostStudentPenalty"));
 
                     JOptionPane.showMessageDialog(this, "配置已从文件自动填充！");
                 } catch (Exception ex) {
@@ -165,7 +183,10 @@ public class SimulationConfigDialog extends JDialog {
         durationField.setEnabled(false);
         studentsField.setEnabled(false);
         probSoloField.setEnabled(false);
-        seedField.setEnabled(false);
+        avgMealPriceField.setEnabled(false);
+        windowCostField.setEnabled(false);
+        tableCostField.setEnabled(false);
+        lostPenaltyField.setEnabled(false);
         modeComboBox.setEnabled(false);
         mealComboBox.setEnabled(false);
         importBtn.setEnabled(false);
@@ -200,8 +221,12 @@ public class SimulationConfigDialog extends JDialog {
                 dto.windowCount = Integer.parseInt(windowCountField.getText().trim());
                 dto.openDuration = Integer.parseInt(durationField.getText().trim());
                 dto.probSolo = Double.parseDouble(probSoloField.getText().trim());
-                dto.randomSeed = Long.parseLong(seedField.getText().trim());
+                dto.randomSeed = AdvancedOptimizationSettings.nextAutomaticRandomSeed();
                 dto.totalStudents = Integer.parseInt(studentsField.getText().trim());
+                dto.avgMealPrice = Double.parseDouble(avgMealPriceField.getText().trim());
+                dto.windowCostPerHour = Double.parseDouble(windowCostField.getText().trim());
+                dto.tableCost = Double.parseDouble(tableCostField.getText().trim());
+                dto.lostStudentPenalty = Double.parseDouble(lostPenaltyField.getText().trim());
                 dto.simulationMode = modeComboBox.getSelectedIndex() == 0 ? "singlePeriod" : "fullDay";
 
                 int mealIdx = mealComboBox.getSelectedIndex();
@@ -218,6 +243,10 @@ public class SimulationConfigDialog extends JDialog {
             }
             if (dto.totalStudents <= 0 || dto.totalStudents > 10000) {
                 throw new IllegalArgumentException("总人数应在 1 到 10000 之间！");
+            }
+            if (dto.avgMealPrice < 0.0 || dto.windowCostPerHour < 0.0
+                    || dto.tableCost < 0.0 || dto.lostStudentPenalty < 0.0) {
+                throw new IllegalArgumentException("经营参数不能为负数！");
             }
 
             // 校验通过，保存数据并关闭弹窗
@@ -260,6 +289,13 @@ public class SimulationConfigDialog extends JDialog {
         dto.probSolo = presetDto.probSolo;
         dto.randomSeed = presetDto.randomSeed;
         dto.totalStudents = presetDto.totalStudents;
+        dto.avgMealPrice = presetDto.avgMealPrice;
+        dto.windowCostPerHour = presetDto.windowCostPerHour;
+        dto.tableCost = presetDto.tableCost;
+        dto.lostStudentPenalty = presetDto.lostStudentPenalty;
+        dto.breakfastPopulationRatio = presetDto.breakfastPopulationRatio;
+        dto.lunchPopulationRatio = presetDto.lunchPopulationRatio;
+        dto.dinnerPopulationRatio = presetDto.dinnerPopulationRatio;
         dto.simulationMode = presetDto.simulationMode;
         dto.mealPeriod = presetDto.mealPeriod;
         dto.lockedFromOptimization = true;
