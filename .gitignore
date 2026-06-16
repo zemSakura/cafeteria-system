@@ -3,6 +3,7 @@
 *.iml
 out/
 deploy-output/
+release-output/
 optimization-output/
 
 # Java

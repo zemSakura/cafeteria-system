@@ -12,6 +12,7 @@ launcher/** export-ignore
 
 # Generated or local deployment outputs.
 deploy-output/** export-ignore
+release-output/** export-ignore
 optimization-output/** export-ignore
 simulation-output/** export-ignore
 *.zip export-ignore

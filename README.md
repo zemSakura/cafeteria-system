@@ -56,6 +56,22 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy.ps1 -Clean
 - `Canteen-Simulation.jar`：可选 JAR 运行包
 - `docs`：部署说明、使用手册、流程图和缺失项检查表
 
+## 生成免配置运行包
+
+如果要给普通用户一个“不安装 JDK、不配置环境变量”的版本，在有 JDK 的开发机上执行：
+
+~~~powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build-release.ps1 -Clean
+~~~
+
+生成结果位于：
+
+~~~text
+release-output\Canteen-Simulation-Portable-Windows.zip
+~~~
+
+把这个 zip 发给用户。用户解压后双击里面的 `Canteen-Simulation.exe` 即可运行；该发布包已经内置 Java Runtime。
+
 ## 入口类
 
 - 源码启动入口：`backend.Main`
