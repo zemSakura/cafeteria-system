@@ -20,7 +20,15 @@ javac -version
 
 ## GitHub 下载后直接运行
 
-在 PowerShell 中进入项目根目录：
+最简单方式：双击项目根目录下的：
+
+~~~text
+Canteen-Simulation.exe
+~~~
+
+它会自动调用 `run.ps1`，完成编译、部署并启动系统主界面。
+
+如果希望在 PowerShell 中手动运行，也可以进入项目根目录执行：
 
 ~~~powershell
 cd cafeteria-system

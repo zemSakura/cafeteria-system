@@ -7,6 +7,8 @@
 .idea export-ignore
 .idea/** export-ignore
 *.iml export-ignore
+launcher export-ignore
+launcher/** export-ignore
 
 # Generated or local deployment outputs.
 deploy-output/** export-ignore
