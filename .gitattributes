@@ -1,0 +1,30 @@
+# Keep GitHub "Download ZIP" focused on runtime source deployment.
+.gitattributes export-ignore
+.ai export-ignore
+.ai/** export-ignore
+.claude export-ignore
+.claude/** export-ignore
+.idea export-ignore
+.idea/** export-ignore
+*.iml export-ignore
+
+# Generated or local deployment outputs.
+deploy-output/** export-ignore
+optimization-output/** export-ignore
+simulation-output/** export-ignore
+*.zip export-ignore
+*.rar export-ignore
+*.tar export-ignore
+*.gz export-ignore
+
+# Test-only sources and reports are not needed for VM deployment.
+Canteen-Simulation/src/testAll/** export-ignore
+Canteen-Simulation/src/backend/unit_test_file_assignment.txt export-ignore
+Canteen-Simulation/src/backend/修改说明.txt export-ignore
+Canteen-Simulation/src/更新说明0526.txt export-ignore
+integration_test_result.txt export-ignore
+plan.txt export-ignore
+参数.md export-ignore
+
+# Word reports are delivery documents, not required to run from source ZIP.
+*.docx export-ignore
