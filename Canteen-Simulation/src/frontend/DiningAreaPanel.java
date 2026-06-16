@@ -218,15 +218,17 @@ public class DiningAreaPanel extends JPanel {
         List<JPanel> seatPanels = new ArrayList<>();
         collectSeatPanels(wrapper, seatPanels);
 
-        Color fill = colorFor(stat.status);
+        Color fill = colorFor(stat);
+        int reservedOnlySeats = Math.max(0, stat.reservedOrOccupiedSeats - stat.occupiedSeats);
         for (int i = 0; i < seatPanels.size(); i++) {
             JPanel seat = seatPanels.get(i);
-            boolean occupied = i < stat.occupiedSeats;
-            seat.setBackground(occupied ? fill : ColorTheme.BG_EMPTY_SEAT);
-            Color border = stat.status == TableStatus.RELEASING_SOON
-                    ? ColorTheme.ACCENT_BLUE
+            boolean occupied = isSeatOccupied(stat, i);
+            boolean reservedOnly = !occupied && isReservedOnlySeat(stat, i, reservedOnlySeats);
+            seat.setBackground(occupied ? fill : (reservedOnly ? ColorTheme.ACCENT_BLUE : ColorTheme.BG_EMPTY_SEAT));
+            Color border = reservedOnly
+                    ? ColorTheme.ACCENT_BLUE.brighter()
                     : ColorTheme.BORDER_SOFT;
-            seat.setBorder(BorderFactory.createLineBorder(border, stat.status == TableStatus.RELEASING_SOON ? 2 : 1));
+            seat.setBorder(BorderFactory.createLineBorder(border, reservedOnly ? 2 : 1));
         }
         String release = stat.expectedReleaseTime < 0
                 ? "-"
@@ -234,22 +236,44 @@ public class DiningAreaPanel extends JPanel {
         wrapper.setToolTipText("桌 " + (stat.tableId + 1)
                 + " | 容量 " + stat.capacity
                 + " | 占用 " + stat.occupiedSeats
+                + " | 占座 " + Math.max(stat.reservedOrOccupiedSeats, stat.occupiedSeats)
                 + " | 预计释放 " + release);
         wrapper.repaint();
     }
 
-    private Color colorFor(TableStatus status) {
-        if (status == TableStatus.PARTIAL) {
-            return ColorTheme.ACCENT_YELLOW;
+    private boolean isSeatOccupied(TableStat stat, int seatIndex) {
+        if (stat.seatGroupIds != null && stat.seatGroupIds.length > seatIndex) {
+            return stat.seatGroupIds[seatIndex] >= 0;
         }
-        if (status == TableStatus.NEAR_FULL) {
-            return new Color(255, 145, 48);
+        return seatIndex < stat.occupiedSeats;
+    }
+
+    private boolean isReservedOnlySeat(TableStat stat, int seatIndex, int reservedOnlySeats) {
+        if (reservedOnlySeats <= 0) {
+            return false;
         }
-        if (status == TableStatus.FULL) {
+        if (stat.seatGroupIds == null || stat.seatGroupIds.length <= seatIndex) {
+            return seatIndex >= stat.occupiedSeats
+                    && seatIndex < stat.occupiedSeats + reservedOnlySeats;
+        }
+        int seenEmptySeats = 0;
+        for (int i = 0; i <= seatIndex && i < stat.seatGroupIds.length; i++) {
+            if (stat.seatGroupIds[i] < 0) {
+                seenEmptySeats++;
+            }
+        }
+        return stat.seatGroupIds[seatIndex] < 0 && seenEmptySeats <= reservedOnlySeats;
+    }
+
+    private Color colorFor(TableStat stat) {
+        if (stat.occupiedSeats >= stat.capacity) {
             return ColorTheme.ACCENT_RED;
         }
-        if (status == TableStatus.RELEASING_SOON) {
-            return ColorTheme.ACCENT_BLUE;
+        if (stat.occupiedSeats >= Math.max(1, stat.capacity - 1)) {
+            return new Color(255, 145, 48);
+        }
+        if (stat.occupiedSeats > 0) {
+            return ColorTheme.ACCENT_YELLOW;
         }
         return ColorTheme.ACCENT_GREEN;
     }

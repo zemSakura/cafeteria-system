@@ -1,0 +1,166 @@
+===============================================================================
+ A 初始化模块（人员到来）单元测试说明
+===============================================================================
+
+一、测试覆盖范围
+-------------------------------------------------------------------------------
+本测试套件针对 A 模块（人员到来模块）的以下 Java 文件进行单元测试：
+
+ 1. CanteenConfig.java              - 全局配置类（默认值、验证、更新、重置）
+ 2. SimulationConfigRequest.java    - 前后端配置传输类（构造、getter/setter）
+ 3. CanteenSimulationEngine.java    - 仿真总引擎（配置应用、启动、停止、重置）
+ 4. ArrivalModule.java              - 到达初始化核心模块（人数分配、到达计划生成）
+ 5. ArrivalDistributionPoint.java   - 分钟级到达强度数据点模型（构造、getter）
+ 6. ArrivalGenerationResult.java    - 到达生成结果封装（学生列表、事件、统计）
+ 7. ArrivalPeak.java                - 高斯峰值描述模型（构造、getter）
+ 8. CrowdType.java                  - 人群类型枚举（FAST/NORMAL/SLOW）
+ 9. Group.java                      - 到达小组模型（构造、getter）
+10. MealArrivalStats.java           - 每餐段统计信息（人口、分布点、峰值）
+11. MealPeriod.java                 - 餐段枚举（BREAKFAST/LUNCH/DINNER + 时间范围）
+12. SimulationMode.java             - 模拟模式枚举（SINGLE_PERIOD/FULL_DAY）
+
+二、测试方法
+-------------------------------------------------------------------------------
+测试策略：白盒单元测试 + 黑盒集成测试，体现三种测试策略：
+
+ 1. 输入输出正确性测试 - 给定输入，验证输出是否与预期一致
+ 2. 逻辑正确性测试   - 验证业务规则（如 breakfast < dinner < lunch）
+ 3. 边界/异常测试     - 验证边界条件和非法输入的处理
+
+测试工具：纯 Java 实现，每个测试类有独立的 main 方法，无需 JUnit/Mockito 等框架。
+
+三、测试数据来源
+-------------------------------------------------------------------------------
+测试数据为模拟数据（simulated data），包含以下类别：
+
+ 1. 正常数据：100、1000、3000
+    - 模拟小型、中型、较大学校/园区的食堂就餐人数
+
+ 2. 边界数据：0、1、10
+    - 模拟极端小规模场景和最小有效输入
+
+ 3. 大规模数据：20000、50000
+    - 模拟大型学校/园区场景，验证算法在大数据量下的表现
+
+ 4. 非法/异常数据：-1、Integer.MAX_VALUE、null 参数
+    - 模拟错误输入和极端情况
+
+ 5. 异常配置数据：超出范围的概率值、负数参数、null 数组
+    - 模拟配置错误场景
+
+四、测试类清单
+-------------------------------------------------------------------------------
+
+ 1. InitPopulationTest.java
+    ├── 测试方法: deriveMealPopulations(int totalPopulation)
+    ├── 测试用例:
+    │   ├── 正常数据: 100, 1000, 3000 人
+    │   ├── 边界数据: 1, 10 人
+    │   ├── 大规模数据: 20000, 50000 人
+    │   ├── 层级关系: breakfast < dinner < lunch 验证
+    │   └── 比例合理性: 各餐段占比范围验证
+    └── 独立运行: java InitPopulationTest
+
+ 2. ArrivalTimeTest.java
+    ├── 测试方法: generateArrivalPlan() 中的到达时间生成
+    ├── 测试用例:
+    │   ├── 早餐到达时间范围验证
+    │   ├── 午餐到达时间范围验证
+    │   ├── 晚餐到达时间范围验证
+    │   ├── FULL_DAY 模式三餐段时间连续性验证
+    │   ├── 到达时间排序正确性验证
+    │   ├── 边界数据: 1, 10 人
+    │   └── 大规模数据: 20000, 50000 人
+    └── 独立运行: java ArrivalTimeTest
+
+ 3. PersonInitTest.java
+    ├── 测试方法: generateStudents(), generateGroups(), groupStudentsByGroupId()
+    ├── 测试用例:
+    │   ├── 学生字段完整性: id, groupId, arrivalTime, mealPeriod, crowdType
+    │   ├── 学生 ID 唯一性验证
+    │   ├── 同组学生一致性: arrivalTime, mealPeriod 一致
+    │   ├── 人群类型分布: FAST/NORMAL/SLOW 覆盖
+    │   ├── generateStudents 与 generateArrivalPlan 一致性
+    │   ├── 分组测试: 组大小 1-4 人
+    │   └── 边界: 1, 10 人和大规模 50000 人
+    └── 独立运行: java PersonInitTest
+
+ 4. BoundaryTest.java
+    ├── 测试方法: generateArrivalPlan(), CanteenConfig.validate() 异常处理
+    ├── 测试用例:
+    │   ├── 负数 totalPopulation (-1) → IllegalArgumentException
+    │   ├── 零 totalPopulation (0) → IllegalArgumentException
+    │   ├── Integer.MAX_VALUE → 不崩溃
+    │   ├── 最小有效值 (1) → 正常生成
+    │   ├── null SimulationMode → 默认 SINGLE_PERIOD
+    │   ├── null MealPeriod → 默认 LUNCH
+    │   ├── null SimulationConfigRequest → IllegalArgumentException
+    │   ├── 非法窗口数量 → 异常
+    │   ├── null 窗口配置数组 → 异常
+    │   ├── 窗口数组长度不匹配 → 异常
+    │   ├── 非法概率值 (1.5) → 异常
+    │   ├── 负数营业时长 (-1) → 异常
+    │   ├── resetToDefaults 恢复正确性
+    │   ├── ArrivalModule 4 种构造函数
+    │   └── resetForNextRun 确定性验证
+    └── 独立运行: java BoundaryTest
+
+ 5. InitModuleIntegrationTest.java
+    ├── 测试方法: generateArrivalPlan(), CanteenSimulationEngine.startEngine()
+    ├── 测试用例:
+    │   ├── SINGLE_PERIOD 模式各餐段完整流程
+    │   ├── FULL_DAY 模式三餐连续流程
+    │   ├── MealArrivalStats 统计信息完整性
+    │   ├── 到达事件生成正确性
+    │   ├── 窗口初始化 (initWindows/initWindowStates)
+    │   ├── CanteenSimulationEngine 默认配置启动
+    │   └── CanteenSimulationEngine 自定义配置启动
+    └── 独立运行: java InitModuleIntegrationTest
+
+ 6. AllInitTests.java
+    ├── 总入口，一键运行以上 5 个测试类
+    ├── 汇总各测试类结果
+    └── 独立运行: java AllInitTests
+
+五、如何支撑实验报告
+-------------------------------------------------------------------------------
+本测试套件为实验报告提供以下支撑：
+
+ 1. 测试数据可直接引用 - 正常/边界/大规模/非法四类数据均有详细记录
+ 2. PASS/FAIL 结果可用于分析 - 每个测试点都输出明确的通过/失败状态
+ 3. 输入-预期-实际三段式输出 - 符合实验报告"输入数据-预期结果-实际结果"格式要求
+ 4. 覆盖三种测试策略 - 输入输出正确性、逻辑正确性、边界/异常测试
+ 5. 各测试类可独立运行 - 便于报告中引用单一模块的测试结果
+ 6. 测试数据说明完整 - 每个测试文件头部注释写明了测试数据来源和预期结果
+
+六、无法直接测试的 private 方法（间接测试方式）
+-------------------------------------------------------------------------------
+ArrivalModule 中的以下方法为 private，通过公开接口间接测试：
+
+ private 方法                    | 间接测试方式
+---------------------------------|------------------------------------------
+ resolvePeriods()               | 通过 generateArrivalPlan() 的 mode 参数验证
+ generatePeriodStudents()       | 通过 generateArrivalPlan() 的输出验证
+ createPeaks()                  | 通过 MealArrivalStats.getPeaks() 验证
+ createDistributionPoints()     | 通过 MealArrivalStats.getDistributionPoints() 验证
+ addBackgroundCandidates()      | 通过生成的 Student 的 source="background" 验证
+ addPeakCandidates()            | 通过生成的 Student 的 source 字段验证
+ toSimulationMinute()           | 通过 Student.getArrivalTime() 时间范围验证
+ gaussianIntensity()            | 通过分布点的 totalIntensity 值验证
+ determineGroupSize()           | 通过 groupStudentsByGroupId() 的组大小验证
+ generateDiningTime()           | 通过 Student 对象的用餐时间字段验证
+ generatePreferredWindow()      | 通过 Student 对象的窗口偏好字段验证
+ generatePatience()             | 通过 Student 对象的耐心值字段验证
+ determineCrowdType()           | 通过 Student.getCrowdType() 分布验证
+ crowdDelayOffset()             | 通过到达时间偏移量间接验证
+
+ CanteenConfig.validate() 中的 validateRate() 为 private，通过修改公共静态字段后
+ 调用 validate() 间接测试。
+
+ CanteenSimulationEngine.initTables() 为 private，通过 startEngine() 后
+ getTableCount() 和 getTables() 间接验证。
+
+===============================================================================
+ 生成时间：2026-05-04
+ 测试目录：Canteen-Simulation/src/testAll/A/
+===============================================================================

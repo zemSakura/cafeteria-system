@@ -398,9 +398,12 @@ public class OptimizationPanel extends JPanel {
                 return new GridSearchOptimizer().run(
                         config,
                         lossConfig,
-                        (step, total, stepResult, currentResult) ->
+                        (step, total, stepResult, currentResult) -> {
+                            if (shouldPublishProgress(step, total)) {
                                 publish(new ProgressUpdate(step, total, snapshot(currentResult.allResults),
-                                        currentResult.bestResult == null ? null : currentResult.bestResult.copyBasic())),
+                                        currentResult.bestResult == null ? null : currentResult.bestResult.copyBasic()));
+                            }
+                        },
                         this::isCancelled
                 );
             }
@@ -426,11 +429,11 @@ public class OptimizationPanel extends JPanel {
                     if (isCancelled()) {
                         statusLabel.setText("寻优已取消，保留已完成候选结果");
                     } else {
+                        markProgressComplete(result);
                         String stopReason = result.stopReason == null || result.stopReason.isEmpty()
                                 ? "寻优完成"
                                 : result.stopReason;
-                        statusLabel.setText(stopReason + "：实际评估 " + result.totalCandidateCount + " 个候选方案 / "
-                                + result.totalSimulationCount + " 次仿真");
+                        setFinishedStatus(stopReason, result.totalCandidateCount, result.totalSimulationCount);
                     }
                 } catch (CancellationException ex) {
                     statusLabel.setText("寻优已取消，保留已完成候选结果");
@@ -450,6 +453,60 @@ public class OptimizationPanel extends JPanel {
             }
         };
         optimizeWorker.execute();
+    }
+
+    private boolean shouldPublishProgress(int step, int total) {
+        if (step <= 0 || step >= total) {
+            return true;
+        }
+        int interval = Math.max(1, total / 200);
+        return step % interval == 0;
+    }
+
+    private void markProgressComplete(OptimizeResult result) {
+        int actual = result == null || result.allResults == null
+                ? 0
+                : result.allResults.size();
+        if (actual <= 0 && result != null) {
+            actual = Math.max(0, result.totalCandidateCount);
+        }
+        int max = Math.max(1, actual);
+        progressBar.setMinimum(0);
+        progressBar.setMaximum(max);
+        progressBar.setValue(actual);
+        progressBar.setString(actual + "/" + actual);
+    }
+
+    private void setFinishedStatus(String stopReason, int candidateCount, int simulationCount) {
+        String reason = displayStopReason(stopReason);
+        String detail = "实际评估 " + candidateCount + " 个候选方案 / " + simulationCount + " 次仿真";
+        statusLabel.setText("<html>" + reason + "<br>" + detail + "</html>");
+        statusLabel.setToolTipText(reason + "：" + detail);
+    }
+
+    private String displayStopReason(String stopReason) {
+        if (stopReason == null || stopReason.trim().isEmpty()) {
+            return "寻优完成";
+        }
+        if ("STABLE_INSIDE_RANGE".equals(stopReason)) {
+            return "已稳定收敛";
+        }
+        if ("MAX_EVALUATION_BUDGET_REACHED".equals(stopReason)) {
+            return "已达到候选评估上限";
+        }
+        if ("MAX_RESOURCE_LIMIT_REACHED".equals(stopReason)) {
+            return "已达到资源搜索上限";
+        }
+        if ("MAX_ROUND_REACHED".equals(stopReason)) {
+            return "已达到搜索轮次上限";
+        }
+        if ("NO_VALID_RESULT".equals(stopReason)) {
+            return "未找到有效候选";
+        }
+        if ("CANCELLED".equals(stopReason)) {
+            return "寻优已取消";
+        }
+        return stopReason;
     }
 
     private OptimizeConfig buildOptimizeConfigFromForm() {
@@ -486,7 +543,9 @@ public class OptimizationPanel extends JPanel {
             progressBar.setMaximum(config.totalCandidateCount());
             progressBar.setValue(0);
         }
-        progressBar.setString(running ? "0/" + config.totalCandidateCount() : "就绪");
+        if (running) {
+            progressBar.setString("0/" + config.totalCandidateCount());
+        }
         if (running) {
             statusLabel.setText("全天自适应寻优中：" + config.totalCandidateCount() + " 个候选上限 / "
                     + config.totalSimulationCount() + " 次仿真上限");
@@ -800,9 +859,11 @@ public class OptimizationPanel extends JPanel {
 
             double rawMin = Double.MAX_VALUE;
             double rawMax = -Double.MAX_VALUE;
+            double runningBestLoss = Double.MAX_VALUE;
             for (SimRunResult r : results) {
-                rawMin = Math.min(rawMin, Math.min(r.loss, r.currentBestLoss));
-                rawMax = Math.max(rawMax, Math.max(r.loss, r.currentBestLoss));
+                runningBestLoss = Math.min(runningBestLoss, r.loss);
+                rawMin = Math.min(rawMin, Math.min(r.loss, runningBestLoss));
+                rawMax = Math.max(rawMax, Math.max(r.loss, runningBestLoss));
             }
             double min = toPlotValue(rawMin);
             double max = toPlotValue(rawMax);
@@ -836,9 +897,11 @@ public class OptimizationPanel extends JPanel {
             g2.setStroke(new BasicStroke(bestSeries ? 2.4f : 1.6f));
             int lastX = -1;
             int lastY = -1;
+            double runningBestLoss = Double.MAX_VALUE;
             for (int i = 0; i < results.size(); i++) {
                 SimRunResult r = results.get(i);
-                double value = toPlotValue(bestSeries ? r.currentBestLoss : r.loss);
+                runningBestLoss = Math.min(runningBestLoss, r.loss);
+                double value = toPlotValue(bestSeries ? runningBestLoss : r.loss);
                 int x = left + (int) Math.round(i * width / (double) (results.size() - 1));
                 int y = top + (int) Math.round((max - value) * height / (max - min));
                 if (bestSeries && lastX >= 0) {
@@ -865,7 +928,7 @@ public class OptimizationPanel extends JPanel {
             g2.setColor(ColorTheme.ACCENT_CYAN);
             g2.fillRect(left + 104, top, 10, 4);
             g2.setColor(ColorTheme.TEXT_SECONDARY);
-            g2.drawString("当前最佳", left + 120, top + 6);
+            g2.drawString("历史最低损失", left + 120, top + 6);
         }
     }
 
@@ -934,20 +997,18 @@ public class OptimizationPanel extends JPanel {
             int bottom = 28;
             int plotWidth = Math.max(1, getWidth() - left - right);
             int plotHeight = Math.max(1, getHeight() - top - bottom);
-            double cellWidth = plotWidth / (double) cols;
-            double cellHeight = plotHeight / (double) rows;
 
             for (int row = 0; row < rows; row++) {
                 for (int col = 0; col < cols; col++) {
                     double value = metrics[row][col];
-                    int x1 = left + (int) Math.round(col * cellWidth);
-                    int x2 = left + (int) Math.round((col + 1) * cellWidth);
-                    int y1 = top + (int) Math.round(row * cellHeight);
-                    int y2 = top + (int) Math.round((row + 1) * cellHeight);
+                    int x1 = left + (int) Math.floor(col * plotWidth / (double) cols);
+                    int x2 = left + (int) Math.floor((col + 1) * plotWidth / (double) cols);
+                    int y1 = top + (int) Math.floor(row * plotHeight / (double) rows);
+                    int y2 = top + (int) Math.floor((row + 1) * plotHeight / (double) rows);
                     g2.setColor(Double.isNaN(value)
                             ? ColorTheme.BG_ITEM
                             : colorForMetric(value, minMetric, maxMetric));
-                    g2.fillRect(x1, y1, Math.max(1, x2 - x1 - 1), Math.max(1, y2 - y1 - 1));
+                    g2.fillRect(x1, y1, Math.max(1, x2 - x1), Math.max(1, y2 - y1));
                 }
             }
 

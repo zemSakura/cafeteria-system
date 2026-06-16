@@ -52,9 +52,11 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
     private static SimulationConfigDTO simulationPresetConfig;
     private static SimRunResult latestOptimizationContext;
     private static SimRunResult latestOptimizationCurrent;
+    private static SimRunResult selectedOptimizationCandidate;
     private static List<SimRunResult> latestOptimizationTopKResults = Collections.emptyList();
     private static List<SimRunResult> latestOptimizationAllResults = Collections.emptyList();
     private static Path latestSimulationReportPath;
+    private static boolean recommendationReplayActive;
 
     private static MainDashboard frame;
 
@@ -146,9 +148,9 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
     }
 
     private static JPanel createSimulationDashboardPanel() {
-        JPanel panel = new JPanel(new BorderLayout(12, 12));
-        panel.setBackground(ColorTheme.BG_MAIN);
-        panel.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+        JPanel content = new ScrollableDashboardPanel(new BorderLayout(12, 12));
+        content.setBackground(ColorTheme.BG_MAIN);
+        content.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
 
         parameterPanel = new ParameterPanel(new ParameterPanel.Actions() {
             @Override
@@ -191,15 +193,56 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
 
         analysisDashboardPanel = new AnalysisDashboardPanel();
 
-        panel.add(parameterPanel, BorderLayout.WEST);
-        panel.add(createSimulationScenePanel(), BorderLayout.CENTER);
-        panel.add(createDecisionPanel(), BorderLayout.EAST);
-        panel.add(analysisDashboardPanel, BorderLayout.SOUTH);
+        JSplitPane centerAndDecision = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT,
+                createSimulationScenePanel(),
+                createDecisionPanel());
+        centerAndDecision.setResizeWeight(0.76);
+        centerAndDecision.setDividerSize(8);
+        styleSplitPane(centerAndDecision);
+
+        JSplitPane mainSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT,
+                parameterPanel,
+                centerAndDecision);
+        mainSplit.setResizeWeight(0.22);
+        mainSplit.setDividerSize(8);
+        mainSplit.setPreferredSize(new Dimension(0, 620));
+        styleSplitPane(mainSplit);
+
+        content.add(mainSplit, BorderLayout.CENTER);
+        content.add(analysisDashboardPanel, BorderLayout.SOUTH);
+
+        JScrollPane scrollPane = new JScrollPane(
+                content,
+                ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+                ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
+        );
+        scrollPane.setBorder(BorderFactory.createEmptyBorder());
+        scrollPane.getViewport().setBackground(ColorTheme.BG_MAIN);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(24);
+
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(ColorTheme.BG_MAIN);
+        panel.add(scrollPane, BorderLayout.CENTER);
         return panel;
+    }
+
+    private static void enableDiningAreaScrollBars(Component component) {
+        if (component instanceof JScrollPane) {
+            JScrollPane scrollPane = (JScrollPane) component;
+            scrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
+            scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+            scrollPane.getHorizontalScrollBar().setUnitIncrement(20);
+        }
+        if (component instanceof Container) {
+            for (Component child : ((Container) component).getComponents()) {
+                enableDiningAreaScrollBars(child);
+            }
+        }
     }
 
     private static JPanel createSimulationScenePanel() {
         myDiningPanel = new DiningAreaPanel(30);
+        enableDiningAreaScrollBars(myDiningPanel);
         myDiningPanel.setBackground(ColorTheme.BG_CARD);
         myQueuePanel = new QueueAreaPanel(5);
         myQueuePanel.setPreferredSize(new Dimension(240, 0));
@@ -214,7 +257,7 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
                 BorderFactory.createEmptyBorder(12, 12, 12, 12)
         ));
 
-        JPanel header = new JPanel(new BorderLayout(8, 4));
+        JPanel header = new JPanel(new BorderLayout(8, 8));
         header.setOpaque(false);
         JLabel title = new JLabel("2D 仿真场景");
         title.setForeground(ColorTheme.TEXT_PRIMARY);
@@ -226,13 +269,17 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         titleBox.setOpaque(false);
         titleBox.add(title);
         titleBox.add(subtitle);
-        header.add(titleBox, BorderLayout.WEST);
-        header.add(createStatusLegendPanel(), BorderLayout.CENTER);
         JButton expandButton = new JButton("放大");
         styleSceneToolButton(expandButton);
         expandButton.setToolTipText("打开更大的实时 2D 仿真场景");
         expandButton.addActionListener(e -> showExpandedSimulationScene());
-        header.add(expandButton, BorderLayout.EAST);
+
+        JPanel titleRow = new JPanel(new BorderLayout(8, 0));
+        titleRow.setOpaque(false);
+        titleRow.add(titleBox, BorderLayout.CENTER);
+        titleRow.add(expandButton, BorderLayout.EAST);
+        header.add(titleRow, BorderLayout.NORTH);
+        header.add(createStatusLegendPanel(), BorderLayout.CENTER);
         scene.add(header, BorderLayout.NORTH);
 
         JPanel mapPanel = new JPanel(new BorderLayout(10, 0));
@@ -305,12 +352,12 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
         scene.setBackground(ColorTheme.BG_MAIN);
         scene.setBorder(BorderFactory.createEmptyBorder(14, 14, 14, 14));
 
-        JPanel header = new JPanel(new BorderLayout(10, 0));
+        JPanel header = new JPanel(new BorderLayout(10, 8));
         header.setOpaque(false);
         JLabel title = new JLabel("实时 2D 仿真场景");
         title.setForeground(ColorTheme.TEXT_PRIMARY);
         title.setFont(ColorTheme.font(Font.BOLD, 20));
-        header.add(title, BorderLayout.WEST);
+        header.add(title, BorderLayout.NORTH);
         header.add(createStatusLegendPanel(), BorderLayout.CENTER);
 
         JPanel topPanel = new JPanel(new BorderLayout(0, 10));
@@ -421,18 +468,19 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
     }
 
     private static JPanel createStatusLegendPanel() {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 4));
+        JPanel panel = new JPanel(new ResponsiveGridLayout(72, 8, 4));
         panel.setBackground(ColorTheme.BG_PANEL);
         panel.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
         panel.add(createLegendItem("低压", ColorTheme.ACCENT_GREEN));
         panel.add(createLegendItem("中压", ColorTheme.ACCENT_YELLOW));
         panel.add(createLegendItem("高压", new Color(249, 115, 22)));
         panel.add(createLegendItem("过载", ColorTheme.ACCENT_RED));
-        panel.add(createLegendItem("等座", ColorTheme.ACCENT_PURPLE));
-        panel.add(createLegendItem("占用", ColorTheme.ACCENT_BLUE));
-        JLabel mode = new JLabel("大客流采用聚合快照渲染，不绘制单个学生");
+        panel.add(createLegendItem("占座", ColorTheme.ACCENT_BLUE));
+        JLabel mode = new JLabel("聚合渲染");
         mode.setForeground(ColorTheme.TEXT_SECONDARY);
+        mode.setToolTipText("大客流采用聚合快照渲染，不绘制单个学生");
         panel.add(mode);
+        panel.setPreferredSize(new Dimension(0, 54));
         return panel;
     }
 
@@ -599,6 +647,7 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
                                                     List<SimRunResult> allResults) {
         latestOptimizationCurrent = current == null ? null : current.copyBasic();
         latestOptimizationContext = best == null ? null : best.copyBasic();
+        selectedOptimizationCandidate = null;
         if (topKResults != null) {
             latestOptimizationTopKResults = copyResults(topKResults);
         }
@@ -664,7 +713,7 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
     }
 
     private static void applyOptimizationPreset(SimRunResult result) {
-        latestOptimizationContext = result.copyBasic();
+        selectedOptimizationCandidate = result.copyBasic();
         SimulationConfigDTO preset = buildLockedSimulationConfig(result);
         simulationPresetConfig = preset;
 
@@ -687,11 +736,11 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
             parameterPanel.applyPreset(preset);
         }
         if (recommendationCardPanel != null) {
-            recommendationCardPanel.updateResult(latestOptimizationCurrent, latestOptimizationContext);
+            recommendationCardPanel.updateResult(selectedOptimizationCandidate, latestOptimizationContext);
         }
         if (analysisDashboardPanel != null) {
             analysisDashboardPanel.updateOptimization(
-                    latestOptimizationCurrent,
+                    selectedOptimizationCandidate,
                     latestOptimizationContext,
                     latestOptimizationTopKResults,
                     latestOptimizationAllResults
@@ -746,6 +795,8 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
 
     private static void clearOptimizationPreset() {
         simulationPresetConfig = null;
+        recommendationReplayActive = false;
+        selectedOptimizationCandidate = null;
         if (parameterPanel != null) {
             parameterPanel.clearPresetState();
         }
@@ -781,8 +832,10 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
                 ? "参数已变化，请重新仿真或启动寻优；推荐方案已过期，请重新寻优"
                 : "参数已变化，请重新仿真或启动寻优";
         simulationPresetConfig = null;
+        recommendationReplayActive = false;
         latestOptimizationContext = null;
         latestOptimizationCurrent = null;
+        selectedOptimizationCandidate = null;
         latestOptimizationTopKResults = Collections.emptyList();
         latestOptimizationAllResults = Collections.emptyList();
         if (recommendationCardPanel != null) {
@@ -872,15 +925,27 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
 
             resetSceneForConfig(dto);
             latestSimulationReportPath = null;
+            recommendationReplayActive = dto.lockedFromOptimization
+                    && selectedOptimizationCandidate != null
+                    && latestOptimizationContext != null;
             if (analysisDashboardPanel != null) {
-                analysisDashboardPanel.clear();
-                analysisDashboardPanel.updateCurrentPlan(dto.windowCount, dto.totalTables);
-                if (latestOptimizationContext != null) {
-                    analysisDashboardPanel.updateRecommendation(
+                if (recommendationReplayActive) {
+                    analysisDashboardPanel.beginCandidateReplay(
+                            selectedOptimizationCandidate,
                             latestOptimizationContext,
                             latestOptimizationTopKResults,
                             latestOptimizationAllResults
                     );
+                } else {
+                    analysisDashboardPanel.clear();
+                    analysisDashboardPanel.updateCurrentPlan(dto.windowCount, dto.totalTables);
+                    if (latestOptimizationContext != null) {
+                        analysisDashboardPanel.updateRecommendation(
+                                latestOptimizationContext,
+                                latestOptimizationTopKResults,
+                                latestOptimizationAllResults
+                        );
+                    }
                 }
             }
 
@@ -1443,8 +1508,15 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
                 analysisDashboardPanel.updateSnapshot(snapshot);
             }
             if (recommendationCardPanel != null && latestOptimizationContext != null) {
-                latestOptimizationCurrent = currentResultFromSnapshot(snapshot);
-                recommendationCardPanel.updateResult(latestOptimizationCurrent, latestOptimizationContext);
+                if (recommendationReplayActive) {
+                    applySnapshotMetrics(selectedOptimizationCandidate, snapshot);
+                } else {
+                    latestOptimizationCurrent = currentResultFromSnapshot(snapshot);
+                }
+                recommendationCardPanel.updateResult(
+                        recommendationReplayActive ? selectedOptimizationCandidate : latestOptimizationCurrent,
+                        latestOptimizationContext
+                );
             }
         }
     }
@@ -1581,4 +1653,61 @@ public class MainDashboard extends JFrame implements SimulationEventListener {
             JOptionPane.showMessageDialog(this, "本次仿真已圆满结束！");
         });
     }
+
+    private static class ScrollableDashboardPanel extends JPanel implements Scrollable {
+        private static final int MIN_CONTENT_HEIGHT = 760;
+
+        private ScrollableDashboardPanel(LayoutManager layout) {
+            super(layout);
+        }
+
+        @Override
+        public Dimension getPreferredSize() {
+            Dimension size = super.getPreferredSize();
+            return new Dimension(size.width, Math.max(size.height, MIN_CONTENT_HEIGHT));
+        }
+
+        @Override
+        public Dimension getPreferredScrollableViewportSize() {
+            return getPreferredSize();
+        }
+
+        @Override
+        public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return 24;
+        }
+
+        @Override
+        public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return Math.max(96, visibleRect.height - 48);
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportWidth() {
+            return true;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportHeight() {
+            Container parent = getParent();
+            return parent != null && parent.getHeight() >= getPreferredSize().height;
+        }
+    }
+
+    private static void applySnapshotMetrics(SimRunResult target, SimulationSnapshot snapshot) {
+        if (target == null || snapshot == null) {
+            return;
+        }
+        target.requestedPopulation = snapshot.totalStudents;
+        target.finishRate = snapshot.completionRate;
+        target.abandonedStudents = snapshot.abandonedCount;
+        target.netProfit = snapshot.netProfit;
+        target.avgWaitTimeSeconds = snapshot.avgQueueWaitSeconds;
+        target.avgWaitTimeMinutes = snapshot.avgQueueWaitSeconds / 60.0;
+        target.avgSeatWaitTimeSeconds = snapshot.avgSeatWaitSeconds;
+        target.avgSeatWaitTimeMinutes = snapshot.avgSeatWaitSeconds / 60.0;
+        target.seatUtilization = snapshot.seatUtilizationRate;
+        target.windowUtilization = snapshot.windowUtilizationRate;
+    }
+
 }

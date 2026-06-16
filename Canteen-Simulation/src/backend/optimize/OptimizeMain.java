@@ -6,6 +6,7 @@ public class OptimizeMain {
     public static void main(String[] args) {
         OptimizeConfig optimizeConfig = new OptimizeConfig();
         applyArgs(args, optimizeConfig);
+        optimizeConfig.validate();
 
         LossConfig lossConfig = new LossConfig();
         GridSearchOptimizer optimizer = new GridSearchOptimizer();

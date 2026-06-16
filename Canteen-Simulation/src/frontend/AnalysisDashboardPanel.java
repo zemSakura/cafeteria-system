@@ -54,13 +54,14 @@ public class AnalysisDashboardPanel extends JPanel {
     private List<SimRunResult> allResults = Collections.emptyList();
     private String noticeMessage;
     private boolean currentPlanPendingMetrics;
+    private boolean recommendationReplayActive;
 
     public AnalysisDashboardPanel() {
         super(new BorderLayout(12, 12));
         setOpaque(false);
         setPreferredSize(new Dimension(0, 290));
 
-        JPanel upper = new JPanel(new GridLayout(1, 4, 12, 0));
+        JPanel upper = new JPanel(new ResponsiveGridLayout(300, 12, 12));
         upper.setOpaque(false);
         upper.add(createTableCard("当前/推荐差异", comparisonTable));
         upper.add(createHeatmapCard());
@@ -76,8 +77,12 @@ public class AnalysisDashboardPanel extends JPanel {
         latestSnapshot = snapshot;
         if (snapshot != null) {
             trendPanel.setTrendPoints(snapshot.trendPoints);
-            currentPlanPendingMetrics = false;
-            applySnapshotMetricsToCurrent(snapshot);
+            if (recommendationReplayActive) {
+                applySnapshotMetrics(snapshot, currentResult);
+            } else {
+                currentPlanPendingMetrics = false;
+                applySnapshotMetrics(snapshot, currentResult);
+            }
             if (noticeMessage != null && bestResult == null) {
                 noticeMessage = "推荐方案已过期，请重新寻优";
             }
@@ -96,6 +101,7 @@ public class AnalysisDashboardPanel extends JPanel {
                                    List<SimRunResult> topK,
                                    List<SimRunResult> all) {
         noticeMessage = null;
+        recommendationReplayActive = false;
         currentResult = current == null ? null : current.copyBasic();
         currentPlanPendingMetrics = false;
         bestResult = best == null ? null : best.copyBasic();
@@ -112,6 +118,7 @@ public class AnalysisDashboardPanel extends JPanel {
         currentResult = null;
         bestResult = null;
         currentPlanPendingMetrics = false;
+        recommendationReplayActive = false;
         topKResults = Collections.emptyList();
         allResults = Collections.emptyList();
         noticeMessage = null;
@@ -127,6 +134,7 @@ public class AnalysisDashboardPanel extends JPanel {
         currentResult = null;
         bestResult = null;
         currentPlanPendingMetrics = false;
+        recommendationReplayActive = false;
         topKResults = Collections.emptyList();
         allResults = Collections.emptyList();
         noticeMessage = message == null || message.trim().isEmpty()
@@ -145,6 +153,7 @@ public class AnalysisDashboardPanel extends JPanel {
         plan.tableCount = tableCount;
         currentResult = plan;
         currentPlanPendingMetrics = true;
+        recommendationReplayActive = false;
         refreshTables();
     }
 
@@ -152,6 +161,7 @@ public class AnalysisDashboardPanel extends JPanel {
                                      List<SimRunResult> topK,
                                      List<SimRunResult> all) {
         noticeMessage = null;
+        recommendationReplayActive = false;
         bestResult = best == null ? null : best.copyBasic();
         topKResults = topK == null ? Collections.emptyList() : snapshot(topK);
         allResults = all == null ? Collections.emptyList() : snapshot(all);
@@ -161,20 +171,38 @@ public class AnalysisDashboardPanel extends JPanel {
         refreshTables();
     }
 
-    private void applySnapshotMetricsToCurrent(SimulationSnapshot snapshot) {
-        if (snapshot == null || currentResult == null) {
+    public void beginCandidateReplay(SimRunResult current,
+                                     SimRunResult recommendation,
+                                     List<SimRunResult> topK,
+                                     List<SimRunResult> all) {
+        latestSnapshot = null;
+        noticeMessage = null;
+        currentResult = current == null ? null : current.copyBasic();
+        bestResult = recommendation == null ? null : recommendation.copyBasic();
+        topKResults = topK == null ? Collections.emptyList() : snapshot(topK);
+        allResults = all == null ? Collections.emptyList() : snapshot(all);
+        currentPlanPendingMetrics = false;
+        recommendationReplayActive = true;
+        sortingWarningLabel.setText(" ");
+        heatmapPanel.setData(currentResult, bestResult, allResults);
+        planComparePanel.setData(currentResult, bestResult, topKResults, allResults);
+        refreshTables();
+    }
+
+    private void applySnapshotMetrics(SimulationSnapshot snapshot, SimRunResult target) {
+        if (snapshot == null || target == null) {
             return;
         }
-        currentResult.requestedPopulation = snapshot.totalStudents;
-        currentResult.finishRate = snapshot.completionRate;
-        currentResult.abandonedStudents = snapshot.abandonedCount;
-        currentResult.netProfit = snapshot.netProfit;
-        currentResult.avgWaitTimeSeconds = snapshot.avgQueueWaitSeconds;
-        currentResult.avgWaitTimeMinutes = snapshot.avgQueueWaitSeconds / 60.0;
-        currentResult.avgSeatWaitTimeSeconds = snapshot.avgSeatWaitSeconds;
-        currentResult.avgSeatWaitTimeMinutes = snapshot.avgSeatWaitSeconds / 60.0;
-        currentResult.seatUtilization = snapshot.seatUtilizationRate;
-        currentResult.windowUtilization = snapshot.windowUtilizationRate;
+        target.requestedPopulation = snapshot.totalStudents;
+        target.finishRate = snapshot.completionRate;
+        target.abandonedStudents = snapshot.abandonedCount;
+        target.netProfit = snapshot.netProfit;
+        target.avgWaitTimeSeconds = snapshot.avgQueueWaitSeconds;
+        target.avgWaitTimeMinutes = snapshot.avgQueueWaitSeconds / 60.0;
+        target.avgSeatWaitTimeSeconds = snapshot.avgSeatWaitSeconds;
+        target.avgSeatWaitTimeMinutes = snapshot.avgSeatWaitSeconds / 60.0;
+        target.seatUtilization = snapshot.seatUtilizationRate;
+        target.windowUtilization = snapshot.windowUtilizationRate;
     }
 
     private JPanel createTableCard(String title, JTable table) {
@@ -297,6 +325,9 @@ public class AnalysisDashboardPanel extends JPanel {
     }
 
     private MetricSource sourceFromCurrent() {
+        if (recommendationReplayActive && currentResult != null) {
+            return MetricSource.from(currentResult);
+        }
         if (latestSnapshot != null) {
             return MetricSource.from(latestSnapshot);
         }
@@ -354,7 +385,7 @@ public class AnalysisDashboardPanel extends JPanel {
         } else {
             value = String.format(Locale.US, "%+.1f 分", delta / 60.0);
         }
-        return (improved ? "✓ " : "⚠ ") + arrow + value;
+        return (improved ? "改善 " : "变差 ") + arrow + value;
     }
 
     private String diffCount(Integer current, Integer best, boolean higherIsBetter) {
@@ -367,7 +398,7 @@ public class AnalysisDashboardPanel extends JPanel {
         }
         boolean improved = higherIsBetter ? delta > 0 : delta < 0;
         String arrow = delta > 0 ? "↑ " : "↓ ";
-        return (improved ? "✓ " : "⚠ ") + arrow + String.format(Locale.US, "%+d 人", delta);
+        return (improved ? "改善 " : "变差 ") + arrow + String.format(Locale.US, "%+d 人", delta);
     }
 
     private List<SimRunResult> snapshot(List<SimRunResult> source) {
@@ -432,9 +463,9 @@ public class AnalysisDashboardPanel extends JPanel {
             setHorizontalAlignment(SwingConstants.CENTER);
             String text = value == null ? "" : value.toString();
             component.setForeground(ColorTheme.TEXT_SECONDARY);
-            if (text.startsWith("✓")) {
+            if (text.startsWith("改善")) {
                 component.setForeground(ColorTheme.ACCENT_GREEN);
-            } else if (text.startsWith("⚠")) {
+            } else if (text.startsWith("变差")) {
                 component.setForeground(ColorTheme.ACCENT_RED);
             }
             return component;
@@ -622,6 +653,18 @@ public class AnalysisDashboardPanel extends JPanel {
                 minMetric = Math.min(minMetric, metric);
                 maxMetric = Math.max(maxMetric, metric);
             }
+            int[] windowRange = centeredRange(minWindow, maxWindow,
+                    best == null ? null : best.windowCount,
+                    current == null ? null : current.windowCount,
+                    6);
+            int[] tableRange = centeredRange(minTable, maxTable,
+                    best == null ? null : best.tableCount,
+                    current == null ? null : current.tableCount,
+                    40);
+            minWindow = windowRange[0];
+            maxWindow = windowRange[1];
+            minTable = tableRange[0];
+            maxTable = tableRange[1];
 
             int rows = Math.max(1, maxWindow - minWindow + 1);
             int cols = Math.max(1, maxTable - minTable + 1);
@@ -632,22 +675,32 @@ public class AnalysisDashboardPanel extends JPanel {
             for (SimRunResult r : results) {
                 int row = r.windowCount - minWindow;
                 int col = r.tableCount - minTable;
+                if (row < 0 || row >= rows || col < 0 || col >= cols) {
+                    continue;
+                }
                 double old = metrics[row][col];
                 double value = metric(r);
                 metrics[row][col] = Double.isNaN(old) ? value : Math.max(old, value);
             }
 
-            int cellWidth = Math.max(2, width / cols);
-            int cellHeight = Math.max(2, height / rows);
             for (int row = 0; row < rows; row++) {
                 for (int col = 0; col < cols; col++) {
                     double value = metrics[row][col];
-                    int x = left + col * cellWidth;
-                    int y = top + row * cellHeight;
+                    int x1 = left + (int) Math.floor(col * width / (double) cols);
+                    int x2 = left + (int) Math.floor((col + 1) * width / (double) cols);
+                    int y1 = top + (int) Math.floor(row * height / (double) rows);
+                    int y2 = top + (int) Math.floor((row + 1) * height / (double) rows);
                     g2.setColor(Double.isNaN(value)
                             ? ColorTheme.BG_ITEM
                             : colorForMetric(value, minMetric, maxMetric));
-                    g2.fillRect(x, y, Math.max(1, cellWidth - 1), Math.max(1, cellHeight - 1));
+                    if (Double.isNaN(value)) {
+                        g2.fillRect(x1, y1, Math.max(1, x2 - x1), Math.max(1, y2 - y1));
+                    } else {
+                        int markerSize = Math.max(6, Math.min(12, Math.min(x2 - x1, y2 - y1)));
+                        int markerX = x1 + Math.max(0, (x2 - x1 - markerSize) / 2);
+                        int markerY = y1 + Math.max(0, (y2 - y1 - markerSize) / 2);
+                        g2.fillRoundRect(markerX, markerY, markerSize, markerSize, 6, 6);
+                    }
                 }
             }
 
@@ -659,6 +712,23 @@ public class AnalysisDashboardPanel extends JPanel {
             drawMarker(g2, best, minWindow, maxWindow, minTable, maxTable,
                     left, top, width, height, ColorTheme.ACCENT_BLUE, "推荐");
             g2.dispose();
+        }
+
+        private int[] centeredRange(int rawMin,
+                                    int rawMax,
+                                    Integer centerValue,
+                                    Integer secondaryValue,
+                                    int minSpan) {
+            if (centerValue == null) {
+                return new int[]{rawMin, rawMax};
+            }
+            int radius = Math.max(1, minSpan / 2);
+            radius = Math.max(radius, Math.abs(rawMin - centerValue));
+            radius = Math.max(radius, Math.abs(rawMax - centerValue));
+            if (secondaryValue != null) {
+                radius = Math.max(radius, Math.abs(secondaryValue - centerValue));
+            }
+            return new int[]{centerValue - radius, centerValue + radius};
         }
 
         private void drawCandidatePoints(Graphics2D g2,
@@ -718,7 +788,7 @@ public class AnalysisDashboardPanel extends JPanel {
             g2.drawString("窗口 " + maxWindow, 6, top + height);
             g2.drawString("餐桌 " + minTable, left, top + height + 22);
             g2.drawString("餐桌 " + maxTable, Math.max(left, left + width - 58), top + height + 22);
-            g2.drawString("颜色=已评估候选得分，空白=未搜索", Math.max(left + 86, left + width / 2 - 76), top + height + 22);
+            g2.drawString("点色=候选得分，空白=未搜索", Math.max(left + 86, left + width / 2 - 76), top + height + 22);
             g2.setColor(ColorTheme.BORDER_SOFT);
             g2.drawRect(left, top, width, height);
         }
@@ -732,7 +802,13 @@ public class AnalysisDashboardPanel extends JPanel {
                 return new Color(191, 219, 254);
             }
             double ratio = Math.max(0.0, Math.min(1.0, (value - min) / (max - min)));
-            return blend(new Color(219, 234, 254), ColorTheme.ACCENT_BLUE, ratio);
+            if (ratio < 0.33) {
+                return blend(new Color(226, 232, 240), new Color(125, 211, 252), ratio / 0.33);
+            }
+            if (ratio < 0.66) {
+                return blend(new Color(125, 211, 252), new Color(37, 99, 235), (ratio - 0.33) / 0.33);
+            }
+            return blend(new Color(37, 99, 235), new Color(15, 23, 42), (ratio - 0.66) / 0.34);
         }
 
         private Color blend(Color from, Color to, double ratio) {

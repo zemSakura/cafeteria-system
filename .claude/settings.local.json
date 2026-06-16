@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(java -cp \"out;/tmp/test-build\" AllInitTests)",
+      "Read(//tmp/**)",
+      "Read(//c/tmp/**)",
+      "Bash(javac -encoding UTF-8 -cp \"C:\\\\Users\\\\HS\\\\.m2\\\\repository\\\\com\\\\formdev\\\\flatlaf\\\\3.4.1\\\\flatlaf-3.4.1.jar\" -d \"Canteen-Simulation/out\" Canteen-Simulation/src/backend/model/*.java Canteen-Simulation/src/backend/config/*.java Canteen-Simulation/src/backend/engine/*.java Canteen-Simulation/src/backend/module/*.java Canteen-Simulation/src/frontend/*.java)"
+    ]
+  }
+}

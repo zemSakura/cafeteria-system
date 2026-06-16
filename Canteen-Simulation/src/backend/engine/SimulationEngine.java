@@ -1287,6 +1287,8 @@ public class SimulationEngine implements Runnable {
             stat.tableId = table.getId();
             stat.capacity = table.getCapacity();
             stat.occupiedSeats = table.getOccupiedSeatCount();
+            stat.reservedOrOccupiedSeats = tableReservedOrOccupiedSeats.getOrDefault(table.getId(), stat.occupiedSeats);
+            stat.seatGroupIds = table.getSeatGroupIds();
             stat.expectedReleaseTime = expectedReleaseTime(table.getId());
             if (stat.occupiedSeats == 0) {
                 stat.status = TableStatus.EMPTY;
